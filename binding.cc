@@ -7,6 +7,7 @@
 #include<fcntl.h>
 #include<errno.h>
 #include "memcache.h"
+#include "bson.h"
 
 
 using namespace v8;
@@ -56,6 +57,14 @@ static NAN_PROPERTY_SETTER(setter) {
 	NanScope();
 	void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
 	fprintf(stderr, "setting property %x %s = %s\n", ptr, *NanUtf8String(property), *NanUtf8String(value));
+	bson::BSONValue bsonValue(value);
+
+
+	for(uint32_t i=0,L=bsonValue.Length(); i<L;i++) {
+		uint8_t n = bsonValue.Data()[i];
+		fprintf(stderr, n > 15 ? "%x " : "0%x ", n);
+	}
+	fprintf(stderr, "value.length %d\n", bsonValue.Length());
 
 	NanReturnUndefined();
 }

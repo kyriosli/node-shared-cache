@@ -7,19 +7,21 @@ namespace bson {
 	typedef enum {
 		Null,
 		Undefined,
-		Boolean,
+		True,
+		False,
 		Number,
 		String,
 		Array,
-		Object
+		Object,
+		ObjectRef
 	} TYPES;
 
 	class BSONValue {
 	private:
-		uint8_t	cache[32];
 		size_t	length;
 		uint8_t*pointer;
 	public:
+		uint8_t	cache[32];
 		BSONValue(v8::Handle<v8::Value> value);
 		~BSONValue();
 		inline const uint8_t* Data() { return pointer; }
