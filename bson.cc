@@ -130,8 +130,6 @@ typedef struct writer_s {
 
 } writer_t;
 
-
-
 bson::BSONValue::BSONValue(v8::Handle<v8::Value> value) {
     NanScope();
     writer_t writer(*this);
@@ -147,4 +145,77 @@ bson::BSONValue::~BSONValue() {
     	fprintf(stderr, "BSONValue: freeing buffer %x (len:%d)\n", pointer, length);
         delete[] pointer;
     }    
+}
+
+static v8::Handle<v8::Value> parse(const uint8_t*& data, object_wrapper_t*& objects) {
+	using namespace v8;
+	uint32_t len;
+	const uint8_t* tmp;
+	switch(*(data++)) {
+	case bson::Null:
+		return NanNull();
+	case bson::Undefined:
+		return NanUndefined();
+	case bson::True:
+		return NanTrue();
+	case bson::False:
+		return NanFalse();
+	case bson::Number:
+		tmp = data;
+		data += sizeof(double);
+		return NanNew<Number>(*reinterpret_cast<const double*>(tmp));
+	case bson::String:
+		len = *reinterpret_cast<const uint32_t*>(data);
+		tmp = data += sizeof(uint32_t);
+		data += len;
+		return NanNew<String>(reinterpret_cast<const uint16_t*>(tmp), len >> 1);
+	case bson::Array:
+		len = *reinterpret_cast<const uint32_t*>(data);
+		data += sizeof(uint32_t);
+		{
+			Local<Array> arr = NanNew<Array>(len);
+			objects = new object_wrapper_t(arr, objects);
+
+			for(uint32_t i = 0; i < len; i++) {
+				arr->Set(i, parse(data, objects));
+			}
+			return arr;
+		}
+	case bson::Object:
+		len = *reinterpret_cast<const uint32_t*>(data);
+		data += sizeof(uint32_t);
+		{
+			Local<Object> obj = NanNew<Object>();
+			objects = new object_wrapper_t(obj, objects);
+
+			for(uint32_t i = 0; i < len; i++) {
+				Handle<Value> name = parse(data, objects);
+				obj->Set(name, parse(data, objects));
+			}
+			return obj;
+		}
+	case bson::ObjectRef:
+		len = *reinterpret_cast<const uint32_t*>(data);
+		data += sizeof(uint32_t);
+		{
+			object_wrapper_t* curr = objects;
+			while(curr->index != len) {
+				curr = curr->next;
+			}
+			return curr->object;
+		}
+	}
+
+}
+
+v8::Handle<v8::Value> bson::parse(const uint8_t* data) {
+	object_wrapper_t* objects = NULL;
+	v8::Handle<v8::Value> ret = ::parse(data, objects);
+	while(objects) {
+		object_wrapper_t* next = objects->next;
+		delete objects;
+		objects = next;
+	}
+
+	return ret;
 }

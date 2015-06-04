@@ -26,9 +26,14 @@ static NAN_METHOD(create) {
 	NanScope();
 
 	size_t len = args[1]->Uint32Value();
-	if(len < 1048576) {
-		return NanThrowError("cache size should be greater than 1MB");
+	if(len < 557056) {
+		return NanThrowError("cache size should be greater than 544KB");
+	} else if(len > 2147483647) {
+		return NanThrowError("cache size should be less than 2GB");
 	}
+	len &= ~32767; // 32KB aligned
+
+	fprintf(stderr, "allocating %d bytes memory\n", len);
 
 	int fd;
 
@@ -50,33 +55,77 @@ static NAN_PROPERTY_GETTER(getter) {
 	void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
 	fprintf(stderr, "getting property %x %s\n", ptr, *NanUtf8String(property));
 
-	NanReturnUndefined();
+	uint8_t* val;
+	size_t valLen;
+	NanUcs2String sKey(property);
+
+	cache::get(ptr, *sKey, sKey.length(), val, valLen);
+
+	if(val) {
+		// TODO bson decode
+		Handle<Value> ret = bson::parse(val);
+		delete[] val;
+		NanReturnValue(ret);
+	} else {
+		NanReturnUndefined();
+	}
 }
 
 static NAN_PROPERTY_SETTER(setter) {
 	NanScope();
 	void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
 	fprintf(stderr, "setting property %x %s = %s\n", ptr, *NanUtf8String(property), *NanUtf8String(value));
+
+	NanUcs2String sKey(property);
+	if(sKey.length() > 255) {
+		return NanThrowError("length of property name should not be greater than 255");
+	}
+
 	bson::BSONValue bsonValue(value);
 
-
+	fputs("      | 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f | 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f", stderr);
 	for(uint32_t i=0,L=bsonValue.Length(); i<L;i++) {
 		uint8_t n = bsonValue.Data()[i];
+		if(!(i&511)) {
+			fputs("\n------|-------------------------------------------------|------------------------------------------------", stderr);
+		}
+		if(!(i&31)) {
+			fprintf(stderr, "\n%06x| ", i);
+		} else if(!(i&15)) {
+			fputs("| ", stderr);
+		}
 		fprintf(stderr, n > 15 ? "%x " : "0%x ", n);
 	}
-	fprintf(stderr, "value.length %d\n", bsonValue.Length());
-	NanUcs2String sKey(property);
+	fprintf(stderr, "length=%d\n", bsonValue.Length());
+
 
 	FATALIF(cache::set(ptr, *sKey, sKey.length(), bsonValue.Data(), bsonValue.Length()), -1, cache::set);
 
 	NanReturnUndefined();
 }
 
+class KeysEnumerator: public cache::EnumerateCallback {
+public:
+	uint32_t length;
+	Local<Array> keys;
+
+	void next(uint16_t* key, size_t keyLen) {
+		keys->Set(length++, NanNew<String>(key, keyLen));
+	}
+
+	KeysEnumerator() :  length(0), keys(NanNew<Array>()) {}
+};
+
 static NAN_PROPERTY_ENUMERATOR(enumerator) {
 	NanScope();
-	Local<Array> ret = NanNew<Array>();
+	void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
+	fprintf(stderr, "enumerating properties %x\n", ptr);
 
-	NanReturnValue(ret);
+	KeysEnumerator enumerator;
+	cache::enumerate(ptr, enumerator);
+
+
+	NanReturnValue(enumerator.keys);
 }
 
 static NAN_PROPERTY_DELETER(deleter) {

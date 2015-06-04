@@ -28,6 +28,8 @@ namespace bson {
 		inline size_t Length () { return length; }
 	};
 
+	v8::Handle<v8::Value> parse(const uint8_t* data);
+
 }
 
 #endif
