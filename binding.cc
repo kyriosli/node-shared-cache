@@ -65,6 +65,9 @@ static NAN_PROPERTY_SETTER(setter) {
 		fprintf(stderr, n > 15 ? "%x " : "0%x ", n);
 	}
 	fprintf(stderr, "value.length %d\n", bsonValue.Length());
+	NanUcs2String sKey(property);
+
+	FATALIF(cache::set(ptr, *sKey, sKey.length(), bsonValue.Data(), bsonValue.Length()), -1, cache::set);
 
 	NanReturnUndefined();
 }

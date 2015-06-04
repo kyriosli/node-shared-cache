@@ -31,13 +31,17 @@ typedef struct writer_s {
         	return;
         }
 
-        do {
+        if(!deleteOld) {
+        	capacity = 4096;
+        }
+        while(capacity < required) {
             capacity <<= 1;
-        } while(capacity < required);
+        }
 
         uint8_t* new_pointer = new uint8_t[capacity];
+        fprintf(stderr, "writer::ensureCapacity: new buffer allocated:%x (len:%d, required:%d, used:%d)\n", new_pointer, capacity, required, used);
         uint8_t* old_pointer = current - used;
-        memcpy(old_pointer, new_pointer, used);
+        memcpy(new_pointer, old_pointer, used);
 
         if(deleteOld) delete[] old_pointer;
         else deleteOld = true;
@@ -65,18 +69,18 @@ typedef struct writer_s {
 	    } else if(value->IsBoolean()) {
 	        *(current++) = value->IsTrue() ? bson::True : bson::False;
 	    } else if(value->IsNumber()) {
-	        ensureCapacity(8);
 	        *(current++) = bson::Number;
+	        ensureCapacity(sizeof(double));
 	        *reinterpret_cast<double*>(current) = value->NumberValue();
-	        current += 8;
+	        current += sizeof(double);
 	    } else if(value->IsString()) {
+	        *(current++) = bson::String;
 	        NanUcs2String str(value);
 	        size_t len = str.length() << 1;
-	        ensureCapacity(4 + len);
+	        ensureCapacity(sizeof(uint32_t) + len);
 
-	        *(current++) = bson::String;
             *reinterpret_cast<uint32_t*>(current) = len;
-            current += 4;
+            current += sizeof(uint32_t);
 	        memcpy(current, *str, len);
 	        current += len;
 	    } else if(value->IsObject()) {
@@ -85,29 +89,34 @@ typedef struct writer_s {
 	        object_wrapper_t* curr = objects;
 	        while(curr) {
 	            if(curr->object->StrictEquals(value)) { // found
-	                ensureCapacity(4);
 	                *(current++) = bson::ObjectRef;
+	                ensureCapacity(sizeof(uint32_t));
 	                *reinterpret_cast<uint32_t*>(current) = curr->index;
+	                current += sizeof(uint32_t);
 	                return;
 	            }
+	            curr = curr->next;
 	        }
 	        // curr is null
 	        objects = new object_wrapper_t(obj, objects);
 	        if(value->IsArray()) {
+	            *(current++) = bson::Array;
 	            Handle<Array> arr = obj.As<Array>();
 	            uint32_t len = arr->Length();
-	            ensureCapacity(4);
-	            *(current++) = bson::Array;
+	            ensureCapacity(sizeof(uint32_t));
 	            *reinterpret_cast<uint32_t*>(current) = len;
+	            current += sizeof(uint32_t);
 	            for(uint32_t i = 0; i < len; i++) {
+	            	fprintf(stderr, "write array[%d] (len=%d)\n", i, len);
 	                write(arr->Get(i));
 	            }
 	        } else { // TODO: support for other object types
+	            *(current++) = bson::Object;
 	            Local<Array> names = obj->GetOwnPropertyNames();
 	            uint32_t len = names->Length();
-	            ensureCapacity(4);
-	            *(current++) = bson::Object;
+	            ensureCapacity(sizeof(uint32_t));
 	            *reinterpret_cast<uint32_t*>(current) = len;
+	            current += sizeof(uint32_t);
 	            for(uint32_t i = 0; i < len; i++) {
 	                Local<Value> name = names->Get(i);
 	                write(name);
@@ -127,7 +136,7 @@ bson::BSONValue::BSONValue(v8::Handle<v8::Value> value) {
     NanScope();
     writer_t writer(*this);
     writer.write(value);
-    // fprintf(stderr, "%d bytes used writing %s\n", writer.used, *NanUtf8String(value));
+    fprintf(stderr, "%d bytes used writing %s\n", writer.used, *NanUtf8String(value));
 
     pointer = writer.current - writer.used;
     length = writer.used;
@@ -135,6 +144,7 @@ bson::BSONValue::BSONValue(v8::Handle<v8::Value> value) {
 
 bson::BSONValue::~BSONValue() {
     if(length > sizeof(cache)) { // new cache is allocated
+    	fprintf(stderr, "BSONValue: freeing buffer %x (len:%d)\n", pointer, length);
         delete[] pointer;
     }    
 }

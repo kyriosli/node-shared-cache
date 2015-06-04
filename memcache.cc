@@ -1,6 +1,7 @@
 #include<uv.h>
 #include<stdio.h>
 #include<string.h>
+#include<errno.h>
 
 #define    MAGIC_NUM    0xdeadbeef
 #define    BLK_SIZE    1024
@@ -14,13 +15,14 @@ typedef struct node_slave_s {
 
 typedef struct node_s {
     uint32_t    slave_next;
+    uint32_t    prev;
     uint32_t    next;
     uint32_t    hash_next;
     uint32_t    blocks;
-    uint16_t    hash;
-    uint16_t    keyLen;
-    uint16_t    valLen;
-    uint8_t        data[0];
+    uint32_t    keyLen;
+    uint32_t    valLen;
+    uint32_t    hash;
+    uint8_t     data[0];
 
 } node_t;
 
@@ -30,11 +32,11 @@ typedef    struct cache_s {
     uint32_t    hashmap[65536];
     struct {
         uint32_t    magic;
-        size_t        size;
+        uint32_t    size;
         uint32_t    blocks_used;
         uint32_t    blocks_total; // maximum block count = 65536*32-513 = 2096639
-        uint32_t    first;
-        uint32_t    last;
+        uint32_t    head;
+        uint32_t    tail;
 
         uv_rwlock_t    lock;
     } info;
@@ -89,7 +91,7 @@ inline uint32_t selectOne(cache_t& cache, uint32_t& curr, uint32_t& i) {
 
 template<typename T>
 inline T* address(void* base, uint32_t block) {
-    return reinterpret_cast<T*>(base + block << 10);
+    return reinterpret_cast<T*>(reinterpret_cast<uint8_t*>(base) + (block << 10));
 }
 
 inline uint32_t allocate(cache_t& cache, uint32_t count) {
@@ -103,44 +105,47 @@ inline uint32_t allocate(cache_t& cache, uint32_t count) {
     uint32_t curr = 16, i = 0; // the first 16*32=512 blocks contains bitmap and hashmap
     uint32_t firstBlock = selectOne(cache, curr, i);
     fprintf(stderr, "select %d blocks (first: %d)\n", count, firstBlock);
+    cache.info.blocks_used += count;
 
     node_slave_t* node = address<node_slave_t>(&cache, firstBlock);
     while(--count) {
-        uint32_t nextBlock = selectOne(cache, curr);
+        uint32_t nextBlock = selectOne(cache, curr, i);
         fprintf(stderr, "selected block  %d\n", nextBlock);
         node->slave_next = nextBlock;
         node = address<node_slave_t>(&cache, nextBlock);
     }
-
     return firstBlock;
 }
 
-inline uint32_t get(cache_t& cache, uint16_t hash, uint16_t* key, size_t keyLen) {
+inline uint32_t get(cache_t& cache, uint16_t hash, const uint16_t* key, size_t keyLen) {
     uint32_t curr = cache.hashmap[hash];
-    outer:
-    while(curr) {
+    fprintf(stderr, "cache::get finding match key (len:%d)\n", keyLen);
+    outer: while(curr) {
         node_t* pnode = address<node_t>(&cache, curr);
+        fprintf(stderr, "cache::get testing node %d (keyLen:%d)\n", curr, pnode->keyLen);
         if(pnode->keyLen == keyLen) {
             uint32_t offset = sizeof(node_t) >> 1;
             uint16_t* ptr = reinterpret_cast<uint16_t*>(pnode);
-            for(uint32_t i = 0; i < keyLen; i++) {
+            for(uint32_t i = 0; i < keyLen; i++, offset++) {
                 if(offset == BLK_SIZE >> 1) { // reach block end
                     ptr = address<uint16_t>(&cache, reinterpret_cast<node_slave_t*>(ptr)->slave_next);
                     offset = sizeof(node_slave_t);
                 }
+                fprintf(stderr, "cache::get testing key char %d:%d\n", key[i], ptr[offset]);
                 if(key[i] != ptr[offset]) { // key not match
                     curr = pnode->hash_next;
-                    continue outer;
+                    goto outer;
                 }
             }
             // found it, curr is the block num and pnode is the pointer.
+            fprintf(stderr, "cache::get matched on block %d\n", curr);
             break;
         }
     }
     return curr;
 }
 
-inline void free(cache_t& cache, uint32_t& block) {
+inline void release(cache_t& cache, uint32_t& block) {
     for(uint32_t next = block; next; next = address<node_slave_t>(&cache, next)->slave_next) {
         fprintf(stderr, "free block %d assert(bit:%d)\n", next, (cache.bitmap[next >> 5] >> (next & 31)) & 1);
         cache.bitmap[next >> 5] ^= 1 << next & 31;
@@ -148,13 +153,13 @@ inline void free(cache_t& cache, uint32_t& block) {
     block = 0;
 }
 
-inline void slave_next(node_slave_t*& node, uint32_t n) {
+inline void slave_next(cache_t& cache, node_slave_t*& node, uint32_t n) {
     for(uint32_t i = 1; i < n; i++) {
-        node = address<node_slave_t>(&cache, pcurr->slave_next);
+        node = address<node_slave_t>(&cache, node->slave_next);
     }
 }
 
-int set(void* ptr, uint16_t* key, size_t keyLen, uint8_t* val, size_t valLen) {
+int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen) {
     size_t totalLen = keyLen + valLen + sizeof(node_s) - 1;
     uint32_t blocksRequired = totalLen / 1023 + (totalLen % 1023 ? 1 : 0);
     fprintf(stderr, "set: total len %d (%d blocks required)\n", totalLen, blocksRequired);
@@ -175,42 +180,91 @@ int set(void* ptr, uint16_t* key, size_t keyLen, uint8_t* val, size_t valLen) {
     hash &= 0xffff;
     // find if key is already exists
     uint32_t found = get(cache, hash, key, keyLen);
+    node_t* selectedBlock;
+
     if(found) { // update
-        node_t& node = *address<node_t>(&cache, found);;
+        selectedBlock = address<node_t>(&cache, found);
+        node_t& node = *selectedBlock;
         if(node.blocks > blocksRequired) { // free extra blocks
             node_slave_t* pcurr = reinterpret_cast<node_slave_t*>(&node);
-            slave_next(pcurr, blocksRequired);
+            slave_next(cache, pcurr, blocksRequired);
             // drop remaining blocks
             fprintf(stderr, "freeing %d blocks\n", node.blocks - blocksRequired);
-            free(cache, pcurr->slave_next);
+            release(cache, pcurr->slave_next);
         } else if(node.blocks < blocksRequired) {
             node_slave_t* pcurr = reinterpret_cast<node_slave_t*>(&node);
-            slave_next(pcurr, node.blocks);
+            slave_next(cache, pcurr, node.blocks);
             // allocate more blocks
             fprintf(stderr, "acquiring extra %d blocks assert(last:%d == 0)\n", blocksRequired - node.blocks, pcurr->slave_next);
             pcurr->slave_next = allocate(cache, blocksRequired - node.blocks);
         }
         node.blocks = blocksRequired;
-        // no need to copy key
-        // bring to first
+
+        if(cache.info.tail != found) { // bring to tail
+            address<node_t>(&cache, node.prev)->next = node.next;
+            address<node_t>(&cache, node.next)->prev = node.prev;
+            node.next = 0;
+            node.prev = cache.info.tail;
+            address<node_t>(&cache, cache.info.tail)->next = found;
+            cache.info.tail = found;
+        }
+
     } else { // insert
         // insert into hash table
         uint32_t firstBlock = allocate(cache, blocksRequired);
-        node_t& node = *address<node_t>(&cache, firstBlock);
+        selectedBlock = address<node_t>(&cache, firstBlock);
+        node_t& node = *selectedBlock;
         node.blocks = blocksRequired;
-        node.hash_next = cache.hasmap[hash]; // insert into linked list
+        node.hash_next = cache.hashmap[hash]; // insert into linked list
         cache.hashmap[hash] = firstBlock;
         node.hash = hash;
         node.keyLen = keyLen;
-        node.valLen = valLen;
-        node.next = cache.info.first;
-        cache.info.first = firstBlock;
-        if(!cache.info.last) {
-            cache.info.last = firstBlock;
-        }
 
+        if(!cache.info.tail) {
+            cache.info.head = cache.info.tail = firstBlock;
+        } else {
+            address<node_t>(&cache, cache.info.tail)->next = firstBlock;
+            node.prev = cache.info.tail;
+            cache.info.tail = firstBlock;
+
+        }
+    }
+    selectedBlock->valLen = valLen;
+
+    // copy key
+    fprintf(stderr, "copying key (len:%d)\n", keyLen);
+    node_slave_t* currentBlock = reinterpret_cast<node_slave_t*>(selectedBlock);
+    uint32_t offset = sizeof(node_t);
+    uint32_t capacity = (BLK_SIZE - offset) >> 1;
+    while(capacity < keyLen) {
+        if(!found) memcpy(reinterpret_cast<uint8_t*>(currentBlock) + offset, key, capacity << 1);
+        key += capacity;
+        keyLen -= capacity;
+        currentBlock = address<node_slave_t>(&cache, currentBlock->slave_next);
+        offset = sizeof(node_slave_t);
+        capacity = (BLK_SIZE - sizeof(node_slave_t)) >> 1;
+    }
+    if(keyLen) { // capacity >= keyLen
+        if(!found) memcpy(reinterpret_cast<uint8_t*>(currentBlock) + offset, key, keyLen << 1);
+        offset += keyLen << 1;
+    }
+    // copy values
+    fprintf(stderr, "copying val (len:%d currentBlock:%x offset:%d)\n", valLen, currentBlock, offset);
+    capacity = BLK_SIZE - offset;
+    while(capacity < valLen) {
+        fprintf(stderr, "copying val (%x+%d) %d bytes\n", currentBlock, offset, capacity);
+        memcpy(reinterpret_cast<uint8_t*>(currentBlock) + offset, val, capacity);
+        val += capacity;
+        valLen -= capacity;
+        currentBlock = address<node_slave_t>(&cache, currentBlock->slave_next);
+        offset = sizeof(node_slave_t);
+        capacity = BLK_SIZE - sizeof(node_slave_t);
     }
 
+    if(valLen) { // capacity >= valLen
+        fprintf(stderr, "copying remaining val (%x+%d) %d bytes\n", currentBlock, offset, valLen);
+        memcpy(reinterpret_cast<uint8_t*>(currentBlock) + offset, val, valLen);
+    }
 
     uv_rwlock_wrunlock(&cache.info.lock);
     return 0;
