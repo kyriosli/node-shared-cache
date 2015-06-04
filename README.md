@@ -6,6 +6,7 @@ It supports auto memory-management and fast object serialization. It uses a hash
 
 ## usage
 
+```js
     var cache = require('node-shared-cache');
     var obj = new cache.Cache("test", 557056);
     // setting property
@@ -28,6 +29,7 @@ It supports auto memory-management and fast object serialization. It uses a hash
     // and saved result is also circular
     test = obj.foo;
     test.self === test; // true
+```
 
 ### class Cache
 
