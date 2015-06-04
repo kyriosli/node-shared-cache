@@ -126,6 +126,25 @@ inline uint32_t allocate(cache_t& cache, uint32_t count) {
     return firstBlock;
 }
 
+inline void touch(cache_t& cache, uint32_t curr) {
+    if(cache.info.tail == curr) {
+        return;
+    }
+     // bring to tail
+    node_t& node = *address<node_t>(&cache, curr);
+    // assert: node.next != 0
+    address<node_t>(&cache, node.next)->prev = node.prev;
+    if(node.prev) {
+        address<node_t>(&cache, node.prev)->next = node.next;
+    } else { // node is head
+        cache.info.head = node.next;
+    }
+    node.next = 0;
+    node.prev = cache.info.tail;
+    address<node_t>(&cache, cache.info.tail)->next = curr;
+    cache.info.tail = curr;
+}
+
 inline uint32_t find(cache_t& cache, uint16_t hash, const uint16_t* key, size_t keyLen) {
     uint32_t curr = cache.hashmap[hash];
     node_t* pnode;
@@ -151,15 +170,7 @@ inline uint32_t find(cache_t& cache, uint16_t hash, const uint16_t* key, size_t 
         //     }
         // }
     }
-    if(curr && cache.info.tail != curr) { // found, bring to tail
-        node_t& node = *pnode;
-        address<node_t>(&cache, node.prev)->next = node.next;
-        address<node_t>(&cache, node.next)->prev = node.prev;
-        node.next = 0;
-        node.prev = cache.info.tail;
-        address<node_t>(&cache, cache.info.tail)->next = curr;
-        cache.info.tail = curr;
-    }
+
     return curr;
 }
 
@@ -169,6 +180,29 @@ inline void release(cache_t& cache, uint32_t& block) {
         cache.bitmap[next >> 5] ^= 1 << next & 31;
     }
     block = 0;
+}
+
+inline void dropNode(cache_t& cache, uint32_t firstBlock) {
+    node_t& node = *address<node_t>(&cache, firstBlock);
+
+    // remove from lru list
+    uint32_t& $prev = node.prev ? address<node_t>(&cache, node.prev)->next : cache.info.head;
+    uint32_t& $next = node.next ? address<node_t>(&cache, node.next)->prev : cache.info.tail;
+
+    $prev = node.next;
+    $next = node.prev;
+
+    // remove from hash list
+    uint32_t* toModify = &cache.hashmap[node.hash];
+    uint32_t curr = *toModify;
+    while(*toModify != firstBlock) {
+        node_t* pcurr = address<node_t>(&cache, *toModify);
+        toModify = &pcurr->hash_next;
+    }
+    *toModify = node.hash_next;
+
+    // release blocks
+    release(cache, firstBlock); 
 }
 
 inline void slave_next(cache_t& cache, node_slave_t*& node, uint32_t n) {
@@ -193,6 +227,7 @@ void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t
     uv_rwlock_rdlock(&cache.info.lock);
     uint32_t found = find(cache, hash, key, keyLen);
     if(found) {
+        touch(cache, found);
         node_t* pnode = address<node_t>(&cache, found);
         size_t  valLen = retvalLen = pnode->valLen;
         uint8_t* val = retval = new uint8_t[valLen];
@@ -241,6 +276,7 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
     node_t* selectedBlock;
 
     if(found) { // update
+        touch(cache, found);
         selectedBlock = address<node_t>(&cache, found);
         node_t& node = *selectedBlock;
         if(node.blocks > blocksRequired) { // free extra blocks
@@ -333,6 +369,31 @@ void enumerate(void* ptr, EnumerateCallback& enumerator) {
     }
 
     uv_rwlock_rdunlock(&cache.info.lock);
+}
+
+bool contains(void* ptr, const uint16_t* key, size_t keyLen) {
+    cache_t& cache = *static_cast<cache_t*>(ptr);
+
+    uint16_t hash = hashsum(key, keyLen);
+    uv_rwlock_rdlock(&cache.info.lock);
+    uint32_t found = find(cache, hash, key, keyLen);
+    fprintf(stderr, "cache::get: key len %d (result:%d)\n", keyLen, found);
+    uv_rwlock_rdunlock(&cache.info.lock);
+    return found;
+}
+
+bool unset(void* ptr, const uint16_t* key, size_t keyLen) {
+    cache_t& cache = *static_cast<cache_t*>(ptr);
+
+    uint16_t hash = hashsum(key, keyLen);
+    uv_rwlock_wrlock(&cache.info.lock);
+    uint32_t found = find(cache, hash, key, keyLen);
+    fprintf(stderr, "cache::get: key len %d (result:%d)\n", keyLen, found);
+    if(found) {
+        dropNode(cache, found);
+    }
+    uv_rwlock_wrunlock(&cache.info.lock);
+    return found;
 }
 
 }

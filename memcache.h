@@ -13,6 +13,10 @@ namespace cache {
 	void enumerate(void* ptr, EnumerateCallback& enumerator);
 
 	void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& val, size_t& valLen);
+
+	bool contains(void* ptr, const uint16_t* key, size_t keyLen);
+
+	bool unset(void* ptr, const uint16_t* key, size_t keyLen);
 }
 
 #endif

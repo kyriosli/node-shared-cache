@@ -20,9 +20,6 @@ obj.foo = "bar";
 
 console.log(obj.foo);
 
-delete obj.foo;
-'foo' in obj;
-console.log(obj.foo);
 
 obj.env = process.env;
 
@@ -44,3 +41,11 @@ test[2] = {'test':test};
 obj.env = test;
 
 console.log(obj.env);
+
+test = obj.env;
+assert.strictEqual(test, test[2].test);
+
+delete obj.foo;
+console.log('foo' in obj);
+assert.ifError('foo' in obj);
+assert.strictEqual(obj.foo, undefined);

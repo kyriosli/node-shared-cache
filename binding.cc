@@ -124,7 +124,6 @@ static NAN_PROPERTY_ENUMERATOR(enumerator) {
 	KeysEnumerator enumerator;
 	cache::enumerate(ptr, enumerator);
 
-
 	NanReturnValue(enumerator.keys);
 }
 
@@ -132,14 +131,18 @@ static NAN_PROPERTY_DELETER(deleter) {
 	NanScope();
 	void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
 	fprintf(stderr, "deleting property %x %s\n", ptr, *NanUtf8String(property));
-	NanReturnValue(NanTrue());
+	NanUcs2String sKey(property);
+
+	NanReturnValue(cache::unset(ptr, *sKey, sKey.length()) ? NanTrue() : NanFalse());
 }
 
 static NAN_PROPERTY_QUERY(querier) {
 	NanScope();
 	void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
 	fprintf(stderr, "query property %x %s\n", ptr, *NanUtf8String(property));
-	NanReturnValue(NanNew<Integer>(0));
+	NanUcs2String sKey(property);
+
+	NanReturnValue(cache::contains(ptr, *sKey, sKey.length()) ? NanNew<Integer>(0) : Handle<Integer>());
 }
 
 void init(Handle<Object> exports) {
