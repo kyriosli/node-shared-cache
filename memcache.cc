@@ -3,6 +3,7 @@
 #include<string.h>
 #include<errno.h>
 #include "memcache.h"
+#include "lock.h"
 
 #define    MAGIC_NUM    0xdeadbeef
 #define    BLK_SIZE     1024
@@ -26,12 +27,6 @@ typedef struct node_s {
     uint16_t    key[0];
 } node_t;
 
-typedef struct read_preferred_rw_lock_s {
-    uint32_t    mutex;
-    uint32_t    wrmutex;
-    uint32_t    readers;
-} rw_lock_t;
-
 typedef struct cache_s {
     union {
         struct {
@@ -53,38 +48,6 @@ typedef struct cache_s {
     
 } cache_t;
 
-// use a spin lock to lock the mutex
-#define LOCK(mutex) while(__sync_lock_test_and_set(&mutex, 1))
-#define UNLOCK(mutex) __sync_lock_release(&mutex)
-
-typedef struct read_lock_s {
-    rw_lock_t& lock;
-    inline read_lock_s(cache_t& cache) : lock(cache.info.lock) {
-        LOCK(lock.mutex);
-        if(++lock.readers == 1) {
-            LOCK(lock.wrmutex);
-        }
-        UNLOCK(lock.mutex);
-    }
-    inline ~read_lock_s() {
-        LOCK(lock.mutex);
-        if(--lock.readers == 0) {
-            UNLOCK(lock.wrmutex);
-        }
-        UNLOCK(lock.mutex);
-    }
-} read_lock_t;
-
-typedef struct write_lock_s {
-    rw_lock_t& lock;
-    inline write_lock_s(cache_t& cache) : lock(cache.info.lock) {
-        LOCK(lock.wrmutex);
-    }
-    inline ~write_lock_s() {
-        UNLOCK(lock.wrmutex);
-    }
-} write_lock_t;
-
 void init(void* ptr, size_t size) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
     if(cache.info.magic == MAGIC_NUM && cache.info.size == size) { // already initialized
@@ -94,7 +57,7 @@ void init(void* ptr, size_t size) {
     memset(&cache, 0, sizeof(cache_t));
     // fprintf(stderr, "sizeof(cache_t):%d==524288 sizeof(cache.info):%d<64\n", sizeof(cache_t), sizeof(cache.info));
 
-    write_lock_t lock(cache);
+    write_lock_t lock(cache.info.lock);
     
     cache.info.magic = MAGIC_NUM;
     cache.info.size = size;
@@ -268,7 +231,7 @@ void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t
     // fprintf(stderr, "cache::get: key len %d\n", keyLen);
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    read_lock_t lock(cache);
+    read_lock_t lock(cache.info.lock);
     uint32_t found = find(cache, key, keyLen);
     if(found) {
         touch(cache, found);
@@ -312,7 +275,7 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
         return -1;
     }
 
-    write_lock_t lock(cache);
+    write_lock_t lock(cache.info.lock);
 
     // find if key is already exists
     uint32_t found = find(cache, key, keyLen);
@@ -403,7 +366,7 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
 
 void enumerate(void* ptr, EnumerateCallback& enumerator) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
-    read_lock_t lock(cache);
+    read_lock_t lock(cache.info.lock);
     uint32_t curr = cache.info.head;
 
     while(curr) {
@@ -416,14 +379,14 @@ void enumerate(void* ptr, EnumerateCallback& enumerator) {
 bool contains(void* ptr, const uint16_t* key, size_t keyLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    read_lock_t lock(cache);
+    read_lock_t lock(cache.info.lock);
     return find(cache, key, keyLen);
 }
 
 bool unset(void* ptr, const uint16_t* key, size_t keyLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    write_lock_t lock(cache);
+    write_lock_t lock(cache.info.lock);
     uint32_t found = find(cache, key, keyLen);
     if(found) {
         dropNode(cache, found);
