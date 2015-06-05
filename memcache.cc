@@ -1,9 +1,8 @@
-#include<uv.h>
 #include<stdio.h>
 #include<string.h>
 #include<errno.h>
-#include "memcache.h"
 #include "lock.h"
+#include "memcache.h"
 
 #define    MAGIC_NUM    0xdeadbeef
 #define    BLK_SIZE     1024
@@ -37,8 +36,6 @@ typedef struct cache_s {
             uint32_t    head;
             uint32_t    tail;
             uint32_t    nextBit; // next block to look for when allocating block
-
-            rw_lock_t   lock;
         } info; // assert(sizeof(cache.info) < 64)
 
         // bitmap[0~15] is not used
@@ -48,7 +45,7 @@ typedef struct cache_s {
     
 } cache_t;
 
-void init(void* ptr, size_t size) {
+void init(void* ptr, int fd, size_t size) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
     if(cache.info.magic == MAGIC_NUM && cache.info.size == size) { // already initialized
         // fprintf(stderr, "init cache: already initialized\n");
@@ -57,7 +54,8 @@ void init(void* ptr, size_t size) {
     memset(&cache, 0, sizeof(cache_t));
     // fprintf(stderr, "sizeof(cache_t):%d==524288 sizeof(cache.info):%d<64\n", sizeof(cache_t), sizeof(cache.info));
 
-    write_lock_t lock(cache.info.lock);
+    // Use forced write lock to prevent deadlock caused by a crashed thread
+    write_lock_t lock(fd);
     
     cache.info.magic = MAGIC_NUM;
     cache.info.size = size;
@@ -66,7 +64,6 @@ void init(void* ptr, size_t size) {
     cache.info.blocks_total = blocks - 512;
     cache.info.blocks_used = 0;
     cache.info.nextBit = 16;
-
     // fprintf(stderr, "init cache: size %d, blocks %d, usage %d/%d\n", size, blocks, cache.info.blocks_used, cache.info.blocks_total);
 }
 
@@ -227,11 +224,11 @@ inline void slave_next(cache_t& cache, node_slave_t*& node, uint32_t n) {
     }
 }
 
-void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t& retvalLen) {
+void get(void* ptr, int fd, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t& retvalLen) {
     // fprintf(stderr, "cache::get: key len %d\n", keyLen);
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    read_lock_t lock(cache.info.lock);
+    read_lock_t lock(fd);
     uint32_t found = find(cache, key, keyLen);
     if(found) {
         touch(cache, found);
@@ -263,7 +260,7 @@ void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t
     // dump(cache);
 }
 
-int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen) {
+int set(void* ptr, int fd, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen) {
     size_t totalLen = keyLen + valLen + sizeof(node_s) - 1;
     uint32_t blocksRequired = totalLen / 1023 + (totalLen % 1023 ? 1 : 0);
     // fprintf(stderr, "cache::set: total len %d (%d blocks required)\n", totalLen, blocksRequired);
@@ -275,7 +272,7 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
         return -1;
     }
 
-    write_lock_t lock(cache.info.lock);
+    write_lock_t lock(fd);
 
     // find if key is already exists
     uint32_t found = find(cache, key, keyLen);
@@ -364,9 +361,9 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
 }
 
 
-void enumerate(void* ptr, EnumerateCallback& enumerator) {
+void enumerate(void* ptr, int fd, EnumerateCallback& enumerator) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
-    read_lock_t lock(cache.info.lock);
+    read_lock_t lock(fd);
     uint32_t curr = cache.info.head;
 
     while(curr) {
@@ -376,17 +373,17 @@ void enumerate(void* ptr, EnumerateCallback& enumerator) {
     }
 }
 
-bool contains(void* ptr, const uint16_t* key, size_t keyLen) {
+bool contains(void* ptr, int fd, const uint16_t* key, size_t keyLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    read_lock_t lock(cache.info.lock);
+    read_lock_t lock(fd);
     return find(cache, key, keyLen);
 }
 
-bool unset(void* ptr, const uint16_t* key, size_t keyLen) {
+bool unset(void* ptr, int fd, const uint16_t* key, size_t keyLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    write_lock_t lock(cache.info.lock);
+    write_lock_t lock(fd);
     uint32_t found = find(cache, key, keyLen);
     if(found) {
         dropNode(cache, found);
