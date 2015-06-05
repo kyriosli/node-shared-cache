@@ -66,37 +66,27 @@ void init(void* ptr, size_t size) {
     cache.info.blocks_used = 0;
     memset(cache.bitmap, 0xff, 64); // fill first 64 bytes of bitmap.
     cache.bitmap[16] = 1; // first block is used by cache.info
-    cache.info.nextBit = 513;
+    cache.info.nextBit = 16;
 
     // fprintf(stderr, "init cache: size %d, blocks %d, usage %d/%d\n", size, blocks, cache.info.blocks_used, cache.info.blocks_total);
 }
 
 inline uint32_t selectOne(cache_t& cache) {
-    uint32_t curr = cache.info.nextBit >> 5, i = cache.info.nextBit & 31;
+    uint32_t& curr = cache.info.nextBit;
     uint32_t bits = cache.bitmap[curr];
     while(bits == 0xffffffff) {
-        i = 0;
         curr++;
         if(curr == (cache.info.blocks_total + 513) >> 5) {
             curr = 16;
         }
         bits = cache.bitmap[curr];
     }
-    // fprintf(stderr, "selectOne: bitmap %d is not full (i=%d)\n", curr, i);
-    // bits is not full 1
-    for(; ; i = (i + 1) & 31) {
-        uint32_t mask = 1 << i;
-        if(bits & mask) continue;
-        cache.bitmap[curr] = bits | mask;
-        // fprintf(stderr, "selectOne: selected bit %d (map[%d]:%x) block %d\n", i, curr, cache.bitmap[curr], curr << 5 | i);
-        uint32_t result = curr << 5 | i;
-        if(result == cache.info.blocks_total + 512) {
-            cache.info.nextBit = 513;
-        } else {
-            cache.info.nextBit = result + 1;
-        }
-        return result;
-    }
+    // assert(bits != 0xffffffff)
+    uint32_t bitSelected = 31 - __builtin_clz(~bits),
+        mask = 1 << bitSelected;
+    // fprintf(stderr, "curr:%d, bits: %08x, bit selected: %d\n", curr, bits, bitSelected);
+    cache.bitmap[curr] = bits | mask;
+    return curr << 5 | bitSelected;
 }
 
 template<typename T>
