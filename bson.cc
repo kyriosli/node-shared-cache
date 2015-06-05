@@ -182,7 +182,7 @@ static v8::Handle<v8::Value> parse(const uint8_t*& data, object_wrapper_t*& obje
     case bson::Int32:
         tmp = data;
         data += sizeof(int32_t);
-        return NanNew<Integer>(*reinterpret_cast<const int32_t*>(data));
+        return NanNew<Integer>(*reinterpret_cast<const int32_t*>(tmp));
     case bson::Number:
         tmp = data;
         data += sizeof(double);
