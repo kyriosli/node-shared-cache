@@ -51,6 +51,48 @@ Note that:
 
   - the length of name should not be longer than 256 characters (limited by internal design)
 
-## TODO
+## Performance
 
-  - LRU cache auto recycle when insufficient memory
+Tests are run under a virtual machine with one processor: 
+
+    $ cat /proc/cpuinfo
+    processor   : 0
+    vendor_id   : GenuineIntel
+    cpu family  : 6
+    model       : 45
+    model name  : Intel(R) Xeon(R) CPU E5-2630 0 @ 2.30GHz
+    stepping    : 7
+    microcode   : 0x70d
+    cpu MHz     : 2300.090
+    cache size  : 15360 KB    
+    ...
+
+### Setting property
+
+When setting property 100w times
+
+```js
+var obj = new binding.Cache("test", 557056);
+
+// test simple obj
+var plain = {};
+console.time('plain obj');
+for(var i = 0; i < 1000000; i++) {
+    plain['test' + (i & 127)] = i;
+}
+
+console.timeEnd('plain obj');
+
+// test shared cache
+console.time('shared cache');
+for(var i = 0; i < 1000000; i++) {
+    obj['test' + (i & 127)] = i;
+}
+console.timeEnd('shared cache');
+```
+
+The result is:
+
+    $ node test
+    plain obj: 241ms
+    shared cache: 466ms
