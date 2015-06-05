@@ -21,46 +21,67 @@ typedef struct node_s {
     uint32_t    hash_next;
     uint32_t    blocks;
     uint32_t    valLen;
+    uint32_t    hash;
     uint16_t    keyLen;
-    uint16_t    hash;
     uint16_t    key[0];
 } node_t;
 
+typedef struct read_preferred_rw_lock_s {
+    uint32_t    mutex;
+    uint32_t    wrmutex;
+    uint32_t    readers;
+} rw_lock_t;
 
 typedef struct cache_s {
-    uint32_t    bitmap[65536]; // maximum memory size available is 65536*32*1K = 2G
-    uint32_t    hashmap[65536];
-    struct {
-        uint32_t    magic;
-        uint32_t    size;
-        uint32_t    blocks_used;
-        uint32_t    blocks_total; // maximum block count = 65536*32-513 = 2096639
-        uint32_t    head;
-        uint32_t    tail;
-        uint32_t    nextBit; // next block to look for when allocating block
+    union {
+        struct {
+            uint32_t    magic;
+            uint32_t    size;
+            uint32_t    blocks_used;
+            uint32_t    blocks_total; // maximum block count = 65536*32-513 = 2096639
+            uint32_t    head;
+            uint32_t    tail;
+            uint32_t    nextBit; // next block to look for when allocating block
 
-        uv_rwlock_t    lock;
-    } info;
+            rw_lock_t   lock;
+        } info; // assert(sizeof(cache.info) < 64)
 
+        // bitmap[0~15] is not used
+        uint32_t bitmap[65536]; // maximum memory size available is 65536*32*1K = 2G
+    };
+    uint32_t hashmap[65536];
+    
 } cache_t;
 
+// use a spin lock to lock the mutex
+#define LOCK(mutex) while(__sync_lock_test_and_set(&mutex, 1))
+#define UNLOCK(mutex) __sync_lock_release(&mutex)
+
 typedef struct read_lock_s {
-    uv_rwlock_t* lock;
-    read_lock_s(cache_t& cache) {
-        uv_rwlock_rdlock(lock = &cache.info.lock);
+    rw_lock_t& lock;
+    inline read_lock_s(cache_t& cache) : lock(cache.info.lock) {
+        LOCK(lock.mutex);
+        if(++lock.readers == 1) {
+            LOCK(lock.wrmutex);
+        }
+        UNLOCK(lock.mutex);
     }
-    ~read_lock_s() {
-        uv_rwlock_rdunlock(lock);   
+    inline ~read_lock_s() {
+        LOCK(lock.mutex);
+        if(--lock.readers == 0) {
+            UNLOCK(lock.wrmutex);
+        }
+        UNLOCK(lock.mutex);
     }
 } read_lock_t;
 
 typedef struct write_lock_s {
-    uv_rwlock_t* lock;
-    write_lock_s(cache_t& cache) {
-        uv_rwlock_wrlock(lock = &cache.info.lock);
+    rw_lock_t& lock;
+    inline write_lock_s(cache_t& cache) : lock(cache.info.lock) {
+        LOCK(lock.wrmutex);
     }
-    ~write_lock_s() {
-        uv_rwlock_wrunlock(lock);   
+    inline ~write_lock_s() {
+        UNLOCK(lock.wrmutex);
     }
 } write_lock_t;
 
@@ -71,25 +92,22 @@ void init(void* ptr, size_t size) {
         return;
     }
     memset(&cache, 0, sizeof(cache_t));
+    // fprintf(stderr, "sizeof(cache_t):%d==524288 sizeof(cache.info):%d<64\n", sizeof(cache_t), sizeof(cache.info));
 
-
-    uv_rwlock_init(&cache.info.lock);
     write_lock_t lock(cache);
     
     cache.info.magic = MAGIC_NUM;
     cache.info.size = size;
     
     uint32_t blocks = size >> 10;
-    cache.info.blocks_total = blocks - 513;
+    cache.info.blocks_total = blocks - 512;
     cache.info.blocks_used = 0;
-    memset(cache.bitmap, 0xff, 64); // fill first 64 bytes of bitmap.
-    cache.bitmap[16] = 1; // first block is used by cache.info
     cache.info.nextBit = 16;
 
     // fprintf(stderr, "init cache: size %d, blocks %d, usage %d/%d\n", size, blocks, cache.info.blocks_used, cache.info.blocks_total);
 }
 
-inline uint32_t selectOne(cache_t& cache) {
+static uint32_t selectOne(cache_t& cache) {
     uint32_t& curr = cache.info.nextBit;
     uint32_t bits = cache.bitmap[curr];
     while(bits == 0xffffffff) {
@@ -100,10 +118,8 @@ inline uint32_t selectOne(cache_t& cache) {
         bits = cache.bitmap[curr];
     }
     // assert(bits != 0xffffffff)
-    uint32_t bitSelected = 31 - __builtin_clz(~bits),
-        mask = 1 << bitSelected;
-    // fprintf(stderr, "curr:%d, bits: %08x, bit selected: %d\n", curr, bits, bitSelected);
-    cache.bitmap[curr] = bits | mask;
+    uint32_t bitSelected = 31 - __builtin_clz(~bits);
+    cache.bitmap[curr] = bits | 1 << bitSelected;
     return curr << 5 | bitSelected;
 }
 
@@ -113,25 +129,27 @@ inline T* address(void* base, uint32_t block) {
 }
 
 static void dump(cache_t& cache) {
-    // fprintf(stderr, "// dump START: head: %d tail:%d", cache.info.head, cache.info.tail);
+    fprintf(stderr, "== DUMP START: head: %d tail:%d", cache.info.head, cache.info.tail);
     uint32_t prev = 0;
 
     for(uint32_t curr = cache.info.head; curr;) {
         node_t& node = *address<node_t>(&cache, curr);
         if(node.prev != prev) {
-            // fprintf(stderr, "ERROR: %d->prev=%d != %d\n", curr, node.prev, prev);
+            fprintf(stderr, "ERROR: %d->prev=%d != %d\n", curr, node.prev, prev);
         }
-        // fprintf(stderr, "\n%d(prev:%d next:%d)", curr, node.prev, node.next);
+        fprintf(stderr, "\n%d(prev:%d next:%d)", curr, node.prev, node.next);
         for(uint32_t slave_next = node.slave_next; slave_next; ) {
             node_slave_t& slave = *address<node_slave_t>(&cache, slave_next);
-            // fprintf(stderr, "-->%d", slave_next);
+            fprintf(stderr, "-->%d", slave_next);
             slave_next = slave.slave_next;
         }
         prev = curr;
         curr = node.next;
     }
     if(prev != cache.info.tail) {
-        // fprintf(stderr, "ERROR: ended at %d != tail(%d)\n", prev, cache.info.tail);
+        fprintf(stderr, "\nERROR: ended at %d != tail(%d)\n", prev, cache.info.tail);
+    } else {
+        fprintf(stderr, "\nDUMP END ==\n");
     }
 
 }
@@ -145,6 +163,7 @@ inline void touch(cache_t& cache, uint32_t curr) {
     node_t& node = *address<node_t>(&cache, curr);
     // assert: node.next != 0
     address<node_t>(&cache, node.next)->prev = node.prev;
+
     if(node.prev) {
         address<node_t>(&cache, node.prev)->next = node.next;
     } else { // node is head
@@ -157,33 +176,29 @@ inline void touch(cache_t& cache, uint32_t curr) {
     // fprintf(stderr, "touch: head=%d tail=%d curr=%d prev=%d next=%d\n", cache.info.head, cache.info.tail, curr, node.prev, node.next);
 }
 
-inline uint32_t find(cache_t& cache, uint16_t hash, const uint16_t* key, size_t keyLen) {
-    uint32_t curr = cache.hashmap[hash];
-    node_t* pnode;
-    // fprintf(stderr, "cache::get finding match key (len:%d)\n", keyLen);
-    for(; curr; curr = pnode->hash_next) {
-        pnode = address<node_t>(&cache, curr);
-        // fprintf(stderr, "cache::get testing node %d (keyLen:%d)\n", curr, pnode->keyLen);
-        if(pnode->keyLen == keyLen && !memcmp(pnode->key, key, keyLen << 1)) {
-            // found it, curr is the block num and pnode is the pointer.
-            // fprintf(stderr, "cache::get matched on block %d\n", curr);
-            break;
+inline uint32_t hashsum(const uint16_t* key, size_t keyLen) {
+    uint32_t hash = 0xffffffff;
+    for(size_t i = 0; i < keyLen; i++) {
+        hash = hash * 31 + key[i];
+    }
+    return hash;
+}
+
+inline uint32_t find(cache_t& cache, const uint16_t* key, size_t keyLen) {
+    uint32_t hash = hashsum(key, keyLen);
+    
+    uint32_t curr = cache.hashmap[hash & 0xffff];
+    // fprintf(stderr, "cache::find: finding match key (len:%d)\n", keyLen);
+    while(curr) {
+        node_t& node = *address<node_t>(&cache, curr);
+        if(node.keyLen == keyLen && node.hash == hash && !memcmp(node.key, key, keyLen << 1)) {
+            // fprintf(stderr, "cache::find: found match block %d (keyLen=%d hash=%d)\n", curr, keyLen, hash);
+            return curr;
         }
-        // because keyLen is less than 256, offset never reaches block end.
-        // for(uint32_t i = 0; i < keyLen; i++, offset++) {
-        //     if(offset == BLK_SIZE >> 1) { // reach block end
-        //         ptr = address<uint16_t>(&cache, reinterpret_cast<node_slave_t*>(ptr)->slave_next);
-        //         offset = sizeof(node_slave_t);
-        //     }
-        //     // fprintf(stderr, "cache::get testing key char %d:%d\n", key[i], ptr[offset]);
-        //     if(key[i] != ptr[offset]) { // key not match
-        //         curr = pnode->hash_next;
-        //         goto outer;
-        //     }
-        // }
+        curr = node.hash_next;
     }
 
-    return curr;
+    return 0;
 }
 
 inline void release(cache_t& cache, uint32_t block) {
@@ -203,18 +218,16 @@ inline void dropNode(cache_t& cache, uint32_t firstBlock) {
     // remove from lru list
     uint32_t& $prev = node.prev ? address<node_t>(&cache, node.prev)->next : cache.info.head;
     uint32_t& $next = node.next ? address<node_t>(&cache, node.next)->prev : cache.info.tail;
-
     $prev = node.next;
     $next = node.prev;
 
     // remove from hash list
-    uint32_t* toModify = &cache.hashmap[node.hash];
+    uint32_t* toModify = &cache.hashmap[node.hash & 0xffff];
     while(*toModify != firstBlock) {
         node_t* pcurr = address<node_t>(&cache, *toModify);
         toModify = &pcurr->hash_next;
     }
     *toModify = node.hash_next;
-
     // release blocks
     release(cache, firstBlock);
 }
@@ -241,7 +254,7 @@ inline uint32_t allocate(cache_t& cache, uint32_t count) {
         node = address<node_slave_t>(&cache, nextBlock);
     }
     // close last slave
-    node->slave_next = NULL;
+    node->slave_next = 0;
     return firstBlock;
 }
 
@@ -251,21 +264,12 @@ inline void slave_next(cache_t& cache, node_slave_t*& node, uint32_t n) {
     }
 }
 
-inline uint16_t hashsum(const uint16_t* key, size_t keyLen) {
-    uint32_t hash = 0;
-    for(size_t i = 0; i < keyLen; i++) {
-        hash = hash * 31 + key[i];
-    }
-    return hash;
-}
-
 void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t& retvalLen) {
     // fprintf(stderr, "cache::get: key len %d\n", keyLen);
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    uint16_t hash = hashsum(key, keyLen);
     read_lock_t lock(cache);
-    uint32_t found = find(cache, hash, key, keyLen);
+    uint32_t found = find(cache, key, keyLen);
     if(found) {
         touch(cache, found);
         node_t* pnode = address<node_t>(&cache, found);
@@ -308,11 +312,10 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
         return -1;
     }
 
-    uint16_t hash = hashsum(key, keyLen);
     write_lock_t lock(cache);
 
     // find if key is already exists
-    uint32_t found = find(cache, hash, key, keyLen);
+    uint32_t found = find(cache, key, keyLen);
     node_t* selectedBlock;
 
     if(found) { // update
@@ -340,18 +343,20 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
         selectedBlock = address<node_t>(&cache, firstBlock);
         node_t& node = *selectedBlock;
         node.blocks = blocksRequired;
-        node.hash_next = cache.hashmap[hash]; // insert into linked list
-        cache.hashmap[hash] = firstBlock;
-        node.hash = hash;
+
+        node.hash = hashsum(key, keyLen);
+        uint32_t& hash_head = cache.hashmap[node.hash & 0xffff];
+        node.hash_next = hash_head; // insert into linked list
+        hash_head = firstBlock;
         node.keyLen = keyLen;
 
         if(!cache.info.tail) {
             cache.info.head = cache.info.tail = firstBlock;
-            node.prev = node.next = NULL;
+            node.prev = node.next = 0;
         } else {
             address<node_t>(&cache, cache.info.tail)->next = firstBlock;
             node.prev = cache.info.tail;
-            node.next = NULL;
+            node.next = 0;
             cache.info.tail = firstBlock;
         }
         // copy key
@@ -411,20 +416,15 @@ void enumerate(void* ptr, EnumerateCallback& enumerator) {
 bool contains(void* ptr, const uint16_t* key, size_t keyLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    uint16_t hash = hashsum(key, keyLen);
     read_lock_t lock(cache);
-    uint32_t found = find(cache, hash, key, keyLen);
-    // fprintf(stderr, "cache::get: key len %d (result:%d)\n", keyLen, found);
-    return found;
+    return find(cache, key, keyLen);
 }
 
 bool unset(void* ptr, const uint16_t* key, size_t keyLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    uint16_t hash = hashsum(key, keyLen);
     write_lock_t lock(cache);
-    uint32_t found = find(cache, hash, key, keyLen);
-    // fprintf(stderr, "cache::get: key len %d (result:%d)\n", keyLen, found);
+    uint32_t found = find(cache, key, keyLen);
     if(found) {
         dropNode(cache, found);
     }
