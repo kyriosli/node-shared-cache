@@ -164,5 +164,52 @@ The result is:
 Warn: Because the shared memory can be modified at any time even the current Node.js
 process is running, depending on keys enumeration result to determine whether a key
 is cached is unwise. On the other hand, it takes so long a time to build strings from
-memory slice, as well as putting them into an array, so DO NOT USE IT unless you knows
+memory slice, as well as putting them into an array, so DO NOT USE IT unless you know
 that what you are doing.
+
+### Object serialization
+
+We choose a c-style binary serialization method rather than `JSON.stringify`, in two
+concepts:
+
+  - Performance serializing and unserializing
+  - Support for circular reference
+
+Tests code list:
+
+```js
+var input = {env: process.env, arr: [process.env, process.env]};
+console.time('JSON.stringify');
+for(var i = 0; i < 100000; i++) {
+    JSON.stringify(input);
+}
+console.timeEnd('JSON.stringify');
+
+console.time('binary serialization');
+for(var i = 0; i < 100000; i++) {
+    obj.test = input;
+}
+console.timeEnd('binary serialization');
+
+// test object unserialization
+input = JSON.stringify(input);
+console.time('JSON.parse');
+for(var i = 0; i < 100000; i++) {
+    JSON.parse(input);
+}
+console.timeEnd('JSON.parse');
+
+console.time('binary unserialization');
+for(var i = 0; i < 100000; i++) {
+    obj.test;
+}
+console.timeEnd('binary unserialization');
+```
+
+The result is:
+
+    JSON.stringify: 6846ms
+    binary serialization: 2125ms
+    JSON.parse: 1557ms
+    binary unserialization: 1261ms
+

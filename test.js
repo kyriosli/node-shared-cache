@@ -68,6 +68,34 @@ for(var i = 0; i < 100000; i++) {
     Object.keys(obj);
 }
 console.timeEnd('enumerate shared cache');
+
+// test object serialization
+var input = {env: process.env, arr: [process.env, process.env]};
+console.time('JSON.stringify');
+for(var i = 0; i < 100000; i++) {
+    JSON.stringify(input);
+}
+console.timeEnd('JSON.stringify');
+
+console.time('binary serialization');
+for(var i = 0; i < 100000; i++) {
+    obj.test = input;
+}
+console.timeEnd('binary serialization');
+
+// test object unserialization
+input = JSON.stringify(input);
+console.time('JSON.parse');
+for(var i = 0; i < 100000; i++) {
+    JSON.parse(input);
+}
+console.timeEnd('JSON.parse');
+
+console.time('binary unserialization');
+for(var i = 0; i < 100000; i++) {
+    obj.test;
+}
+console.timeEnd('binary unserialization');
 return;
 
 obj.foo = "bar";
