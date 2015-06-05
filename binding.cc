@@ -9,6 +9,11 @@
 #include "memcache.h"
 #include "bson.h"
 
+#if (NODE_MODULE_VERSION > NODE_0_10_MODULE_VERSION)
+#define NanReturnEmpty(TYPE)    return
+#else
+#define NanReturnEmpty(TYPE)    return Handle<TYPE>()
+#endif
 
 using namespace v8;
 
@@ -101,7 +106,7 @@ static NAN_PROPERTY_SETTER(setter) {
 
 
     FATALIF(cache::set(ptr, keyBuf, keyLen, bsonValue.Data(), bsonValue.Length()), -1, cache::set);
-    NanReturnUndefined();
+    NanReturnValue(value);
 }
 
 class KeysEnumerator: public cache::EnumerateCallback {
@@ -113,7 +118,7 @@ public:
         keys->Set(length++, NanNew<String>(key, keyLen));
     }
 
-    KeysEnumerator() :  length(0), keys(NanNew<Array>()) {}
+    KeysEnumerator() : length(0), keys(NanNew<Array>()) {}
 };
 
 static NAN_PROPERTY_ENUMERATOR(enumerator) {
@@ -133,7 +138,7 @@ static NAN_PROPERTY_DELETER(deleter) {
     size_t keyLen = property->Length();
     if(keyLen > 255) {
         NanThrowError("length of property name should not be greater than 255");
-        return Handle<Boolean>();
+        NanReturnEmpty(Boolean);
     }
     uint16_t keyBuf[256];
     property->Write(keyBuf);
@@ -147,7 +152,7 @@ static NAN_PROPERTY_QUERY(querier) {
     size_t keyLen = property->Length();
     if(keyLen > 255) {
         NanThrowError("length of property name should not be greater than 255");
-        return Handle<Integer>();
+        NanReturnEmpty(Integer);
     }
     uint16_t keyBuf[256];
     property->Write(keyBuf);

@@ -26,7 +26,7 @@ obj.env = process.env;
 obj.env = 0;
 
 // increase block
-obj.env = [process.env, process.env]
+obj.env = [process.env, process.env];
 
 assert.deepEqual(Object.keys(obj).slice(-2), ['foo', 'env']);
 
@@ -55,3 +55,8 @@ for(var i = 0; i < 1000000; i+=3) {
 }
 console.timeEnd('LRU cache replacement');
 assert.ifError('test0' in obj);
+
+var longData = Array(15.join(Array(64).join('abcdefgh')); // 17 blocks
+
+obj.test = longData;
+assert.strictEqual(obj.test, longData);
