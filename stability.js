@@ -2,12 +2,12 @@ var cp = require('child_process');
 
 if(process.argv[2] !== 'worker') {
 	var workers = [];
-	for(var i = 0; i < 10; i++) {
+	for(var i = 0; i < 4; i++) {
 		var worker = workers[i] = cp.spawn(process.execPath, [__filename, 'worker'], {stdio: 'inherit'});
 		console.log('spawn child ', i, worker.pid);
 	}
 	process.on('SIGINT', function () {
-		for(var i = 0; i < 10; i++) {
+		for(var i = 0; i < 4; i++) {
 			workers[i].kill('SIGINT');
 		}
 	});
@@ -15,9 +15,15 @@ if(process.argv[2] !== 'worker') {
 	return;
 }
 
-var n = 0;
+var n = 0, stopped = false;
 var binding = require('./build/Release/binding.node');
 var obj = new binding.Cache("test", 557056);
+
+
+process.on('SIGINT', function () {
+	console.log(process.pid, n);
+	stopped = true;
+});
 
 function sched() {
 	n++;
@@ -28,14 +34,10 @@ function sched() {
 		case 3: delete obj.foo; break;
 		case 4: Object.keys(obj); break;
 		case 5: obj.foo = null; break;
+		case 6: 'foo' in obj; break;
 		default: obj.foo; break;
 	}
-	setTimeout(sched, 0);
+	stopped || setTimeout(sched, 0);
 }
 
 sched();
-
-process.on('SIGINT', function () {
-	console.log(process.pid, n);
-	process.exit();
-});

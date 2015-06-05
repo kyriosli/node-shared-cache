@@ -27,7 +27,7 @@ typedef struct node_s {
 } node_t;
 
 
-typedef    struct cache_s {
+typedef struct cache_s {
     uint32_t    bitmap[65536]; // maximum memory size available is 65536*32*1K = 2G
     uint32_t    hashmap[65536];
     struct {
@@ -44,6 +44,26 @@ typedef    struct cache_s {
 
 } cache_t;
 
+typedef struct read_lock_s {
+    uv_rwlock_t* lock;
+    read_lock_s(cache_t& cache) {
+        uv_rwlock_rdlock(lock = &cache.info.lock);
+    }
+    ~read_lock_s() {
+        uv_rwlock_rdunlock(lock);   
+    }
+} read_lock_t;
+
+typedef struct write_lock_s {
+    uv_rwlock_t* lock;
+    write_lock_s(cache_t& cache) {
+        uv_rwlock_wrlock(lock = &cache.info.lock);
+    }
+    ~write_lock_s() {
+        uv_rwlock_wrunlock(lock);   
+    }
+} write_lock_t;
+
 void init(void* ptr, size_t size) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
     if(cache.info.magic == MAGIC_NUM && cache.info.size == size) { // already initialized
@@ -54,12 +74,10 @@ void init(void* ptr, size_t size) {
 
 
     uv_rwlock_init(&cache.info.lock);
-    uv_rwlock_wrlock(&cache.info.lock);
+    write_lock_t lock(cache);
     
     cache.info.magic = MAGIC_NUM;
     cache.info.size = size;
-    
-    uv_rwlock_wrunlock(&cache.info.lock);
     
     uint32_t blocks = size >> 10;
     cache.info.blocks_total = blocks - 513;
@@ -246,7 +264,7 @@ void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
     uint16_t hash = hashsum(key, keyLen);
-    uv_rwlock_rdlock(&cache.info.lock);
+    read_lock_t lock(cache);
     uint32_t found = find(cache, hash, key, keyLen);
     if(found) {
         touch(cache, found);
@@ -276,7 +294,6 @@ void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t
     }
 
     // dump(cache);
-    uv_rwlock_rdunlock(&cache.info.lock);
 }
 
 int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen) {
@@ -292,7 +309,7 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
     }
 
     uint16_t hash = hashsum(key, keyLen);
-    uv_rwlock_wrlock(&cache.info.lock);
+    write_lock_t lock(cache);
 
     // find if key is already exists
     uint32_t found = find(cache, hash, key, keyLen);
@@ -375,14 +392,13 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
         memcpy(reinterpret_cast<uint8_t*>(currentBlock) + offset, val, valLen);
     }
     // dump(cache);
-    uv_rwlock_wrunlock(&cache.info.lock);
     return 0;
 }
 
 
 void enumerate(void* ptr, EnumerateCallback& enumerator) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
-    uv_rwlock_rdlock(&cache.info.lock);
+    read_lock_t lock(cache);
     uint32_t curr = cache.info.head;
 
     while(curr) {
@@ -390,18 +406,15 @@ void enumerate(void* ptr, EnumerateCallback& enumerator) {
         enumerator.next(node.key, node.keyLen);
         curr = node.next;
     }
-
-    uv_rwlock_rdunlock(&cache.info.lock);
 }
 
 bool contains(void* ptr, const uint16_t* key, size_t keyLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
     uint16_t hash = hashsum(key, keyLen);
-    uv_rwlock_rdlock(&cache.info.lock);
+    read_lock_t lock(cache);
     uint32_t found = find(cache, hash, key, keyLen);
     // fprintf(stderr, "cache::get: key len %d (result:%d)\n", keyLen, found);
-    uv_rwlock_rdunlock(&cache.info.lock);
     return found;
 }
 
@@ -409,13 +422,12 @@ bool unset(void* ptr, const uint16_t* key, size_t keyLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
     uint16_t hash = hashsum(key, keyLen);
-    uv_rwlock_wrlock(&cache.info.lock);
+    write_lock_t lock(cache);
     uint32_t found = find(cache, hash, key, keyLen);
     // fprintf(stderr, "cache::get: key len %d (result:%d)\n", keyLen, found);
     if(found) {
         dropNode(cache, found);
     }
-    uv_rwlock_wrunlock(&cache.info.lock);
     return found;
 }
 
