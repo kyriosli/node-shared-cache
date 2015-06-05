@@ -7,28 +7,28 @@ It supports auto memory-management and fast object serialization. It uses a hash
 ## usage
 
 ```js
-    var cache = require('node-shared-cache');
-    var obj = new cache.Cache("test", 557056);
-    // setting property
-    obj.foo = "bar";
-    // getting property
-    console.log(obj.foo);
-    // enumerating properties
-    for(var k in obj);
-    Object.keys(obj);
-    // deleting property
-    delete obj.foo;
-    // writing objects is also supported
-    obj.foo = {'foo': 'bar'};
-    // but original object reference is not saved
-    var test = obj.foo = {'foo': 'bar'};
-    test === obj.foo; // false
-    // circular reference is supported.
-    test.self = test;
-    obj.foo = test;
-    // and saved result is also circular
-    test = obj.foo;
-    test.self === test; // true
+var cache = require('node-shared-cache');
+var obj = new cache.Cache("test", 557056);
+// setting property
+obj.foo = "bar";
+// getting property
+console.log(obj.foo);
+// enumerating properties
+for(var k in obj);
+Object.keys(obj);
+// deleting property
+delete obj.foo;
+// writing objects is also supported
+obj.foo = {'foo': 'bar'};
+// but original object reference is not saved
+var test = obj.foo = {'foo': 'bar'};
+test === obj.foo; // false
+// circular reference is supported.
+test.self = test;
+obj.foo = test;
+// and saved result is also circular
+test = obj.foo;
+test.self === test; // true
 ```
 
 ### class Cache
@@ -69,21 +69,19 @@ Tests are run under a virtual machine with one processor:
 
 ### Setting property
 
-When setting property 100w times
+When setting property 100w times:
 
 ```js
-var obj = new binding.Cache("test", 557056);
-
-// test simple obj
+// test plain object
 var plain = {};
 console.time('plain obj');
 for(var i = 0; i < 1000000; i++) {
     plain['test' + (i & 127)] = i;
 }
-
 console.timeEnd('plain obj');
 
 // test shared cache
+var obj = new binding.Cache("test", 1048576);
 console.time('shared cache');
 for(var i = 0; i < 1000000; i++) {
     obj['test' + (i & 127)] = i;
@@ -93,6 +91,78 @@ console.timeEnd('shared cache');
 
 The result is:
 
-    $ node test
-    plain obj: 241ms
-    shared cache: 466ms
+    plain obj: 234ms
+    shared cache: 448ms
+
+### Getting property
+
+When trying to read existing key:
+
+```js
+console.time('read plain obj');
+for(var i = 0; i < 1000000; i++) {
+    plain['test' + (i & 127)];
+}
+console.timeEnd('read plain obj');
+
+console.time('read shared cache');
+for(var i = 0; i < 1000000; i++) {
+    obj['test' + (i & 127)];
+}
+console.timeEnd('read shared cache');
+```
+
+The result is:
+
+    read plain obj: 127ms
+    read shared cache: 499ms
+
+When trying to read keys that are not existed:
+
+```js
+console.time('read plain obj with key absent');
+for(var i = 0; i < 1000000; i++) {
+    plain['oops' + (i & 127)];
+}
+console.timeEnd('read plain obj with key absent');
+
+console.time('read shared cache with key absent');
+for(var i = 0; i < 1000000; i++) {
+    obj['oops' + (i & 127)];
+}
+console.timeEnd('read shared cache with key absent');
+```
+
+The result is:
+
+    read plain obj with key absent: 262ms
+    read shared cache with key absent: 353ms
+
+### Enumerating properties
+
+When enumerating all the keys:
+
+```js
+console.time('enumerate plain obj');
+for(var i = 0; i < 100000; i++) {
+    Object.keys(plain);
+}
+console.timeEnd('enumerate plain obj');
+
+console.time('enumerate shared cache');
+for(var i = 0; i < 100000; i++) {
+    Object.keys(obj);
+}
+console.timeEnd('enumerate shared cache');
+```
+
+The result is:
+
+    enumerate plain obj: 657ms
+    enumerate shared cache: 2698ms
+
+Warn: Because the shared memory can be modified at any time even the current Node.js
+process is running, depending on keys enumeration result to determine whether a key
+is cached is unwise. On the other hand, it takes so long a time to build strings from
+memory slice, as well as putting them into an array, so DO NOT USE IT unless you knows
+that what you are doing.
