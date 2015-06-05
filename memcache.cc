@@ -191,7 +191,6 @@ inline void dropNode(cache_t& cache, uint32_t firstBlock) {
 
     // remove from hash list
     uint32_t* toModify = &cache.hashmap[node.hash];
-    uint32_t curr = *toModify;
     while(*toModify != firstBlock) {
         node_t* pcurr = address<node_t>(&cache, *toModify);
         toModify = &pcurr->hash_next;
