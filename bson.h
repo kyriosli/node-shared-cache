@@ -4,17 +4,6 @@
 #include<v8.h>
 
 namespace bson {
-    typedef enum {
-        Null,
-        Undefined,
-        True,
-        False,
-        Number,
-        String,
-        Array,
-        Object,
-        ObjectRef
-    } TYPES;
 
     class BSONValue {
     private:

@@ -3,6 +3,21 @@
 #include<nan.h>
 #include<string.h>
 
+namespace bson {
+    typedef enum {
+        Null,
+        Undefined,
+        True,
+        False,
+        Int32,
+        Number,
+        String,
+        Array,
+        Object,
+        ObjectRef
+    } TYPES;
+}
+
 typedef struct object_wrapper_s {
     v8::Handle<v8::Object> object;
     uint32_t index;
@@ -77,6 +92,11 @@ typedef struct writer_s {
             *(current++) = bson::Null;
         } else if(value->IsBoolean()) {
             *(current++) = value->IsTrue() ? bson::True : bson::False;
+        } else if(value->IsInt32()) {
+            *(current++) = bson::Int32;
+            ensureCapacity(sizeof(int32_t));
+            *reinterpret_cast<int32_t*>(current) = value->Int32Value();
+            current += sizeof(int32_t);
         } else if(value->IsNumber()) {
             *(current++) = bson::Number;
             ensureCapacity(sizeof(double));
@@ -159,6 +179,10 @@ static v8::Handle<v8::Value> parse(const uint8_t*& data, object_wrapper_t*& obje
         return NanTrue();
     case bson::False:
         return NanFalse();
+    case bson::Int32:
+        tmp = data;
+        data += sizeof(int32_t);
+        return NanNew<Integer>(*reinterpret_cast<const int32_t*>(data));
     case bson::Number:
         tmp = data;
         data += sizeof(double);
