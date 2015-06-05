@@ -31,7 +31,7 @@ obj.env = [process.env, process.env]
 assert.deepEqual(Object.keys(obj).slice(-2), ['foo', 'env']);
 
 for(var k in obj) {
-//  console.log(k, obj[k]);
+    console.log(k, obj[k]);
 }
 
 var test = [process.env, process.env];
@@ -49,7 +49,9 @@ assert.strictEqual(obj.foo, undefined);
 
 
 console.time('LRU cache replacement');
-for(var i = 0; i < 1000000; i++) {
+for(var i = 0; i < 1000000; i+=3) {
     obj['test' + i] = i;
+    assert.strictEqual(obj['test' + i] , i);
 }
 console.timeEnd('LRU cache replacement');
+assert.ifError('test0' in obj);
