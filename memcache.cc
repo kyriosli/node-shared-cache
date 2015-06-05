@@ -94,6 +94,29 @@ inline T* address(void* base, uint32_t block) {
     return reinterpret_cast<T*>(reinterpret_cast<uint8_t*>(base) + (block << 10));
 }
 
+static void dump(cache_t& cache) {
+    // fprintf(stderr, "// dump START: head: %d tail:%d", cache.info.head, cache.info.tail);
+    uint32_t prev = 0;
+
+    for(uint32_t curr = cache.info.head; curr;) {
+        node_t& node = *address<node_t>(&cache, curr);
+        if(node.prev != prev) {
+            // fprintf(stderr, "ERROR: %d->prev=%d != %d\n", curr, node.prev, prev);
+        }
+        // fprintf(stderr, "\n%d(prev:%d next:%d)", curr, node.prev, node.next);
+        for(uint32_t slave_next = node.slave_next; slave_next; ) {
+            node_slave_t& slave = *address<node_slave_t>(&cache, slave_next);
+            // fprintf(stderr, "-->%d", slave_next);
+            slave_next = slave.slave_next;
+        }
+        prev = curr;
+        curr = node.next;
+    }
+    if(prev != cache.info.tail) {
+        // fprintf(stderr, "ERROR: ended at %d != tail(%d)\n", prev, cache.info.tail);
+    }
+
+}
 
 inline void touch(cache_t& cache, uint32_t curr) {
     // fprintf(stderr, "cache::touch %d (current: %d)\n", curr, cache.info.tail);
@@ -158,7 +181,7 @@ inline void release(cache_t& cache, uint32_t block) {
 
 inline void dropNode(cache_t& cache, uint32_t firstBlock) {
     node_t& node = *address<node_t>(&cache, firstBlock);
-
+    // fprintf(stderr, "dropping node %d (prev:%d next:%d)\n", firstBlock, node.prev, node.next);
     // remove from lru list
     uint32_t& $prev = node.prev ? address<node_t>(&cache, node.prev)->next : cache.info.head;
     uint32_t& $next = node.next ? address<node_t>(&cache, node.next)->prev : cache.info.tail;
@@ -184,6 +207,7 @@ inline uint32_t allocate(cache_t& cache, uint32_t count) {
     // fprintf(stderr, "allocate: used=%d, count=%d, target=%d\n", cache.info.blocks_used, count, target);
     if(cache.info.blocks_used > target) { // not enough
         do {
+            // fprintf(stderr, "allocate: need to drop %d more blocks (head=%d)\n", cache.info.blocks_used - target, cache.info.head);
             dropNode(cache, cache.info.head);
         } while (cache.info.blocks_used > target);
     }
@@ -199,6 +223,8 @@ inline uint32_t allocate(cache_t& cache, uint32_t count) {
         node->slave_next = nextBlock;
         node = address<node_slave_t>(&cache, nextBlock);
     }
+    // close last slave
+    node->slave_next = NULL;
     return firstBlock;
 }
 
@@ -250,6 +276,7 @@ void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t
         retval = NULL;
     }
 
+    // dump(cache);
     uv_rwlock_rdunlock(&cache.info.lock);
 }
 
@@ -348,7 +375,7 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
         // fprintf(stderr, "copying remaining val (%x+%d) %d bytes\n", currentBlock, offset, valLen);
         memcpy(reinterpret_cast<uint8_t*>(currentBlock) + offset, val, valLen);
     }
-
+    // dump(cache);
     uv_rwlock_wrunlock(&cache.info.lock);
     return 0;
 }
@@ -360,7 +387,6 @@ void enumerate(void* ptr, EnumerateCallback& enumerator) {
     uint32_t curr = cache.info.head;
 
     while(curr) {
-// fprintf(stderr, "enum %d\n", curr);
         node_t& node = *address<node_t>(&cache, curr);
         enumerator.next(node.key, node.keyLen);
         curr = node.next;
