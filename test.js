@@ -56,7 +56,7 @@ for(var i = 0; i < 1000000; i+=3) {
 console.timeEnd('LRU cache replacement');
 assert.ifError('test0' in obj);
 
-var longData = Array(15.join(Array(64).join('abcdefgh')); // 17 blocks
+var longData = Array(15).join(Array(64).join('abcdefgh')); // 17 blocks
 
 obj.test = longData;
 assert.strictEqual(obj.test, longData);

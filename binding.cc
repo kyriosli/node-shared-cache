@@ -49,10 +49,9 @@ static NAN_METHOD(create) {
 
     FATALIF(ptr = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0), MAP_FAILED, mmap);
 
-    cache::init(ptr, fd, len);
+    cache::init(ptr, len);
 
     NanSetInternalFieldPointer(args.Holder(), 0, ptr);
-    args.Holder()->SetInternalField(1, NanNew<Integer>(fd));
     NanReturnUndefined();
 }
 
@@ -63,7 +62,6 @@ static NAN_METHOD(create) {
     uint16_t keyBuf[256];\
     property->Write(keyBuf);\
     void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);\
-    int fd = args.Holder()->GetInternalField(1)->Int32Value()\
 
 
 static NAN_PROPERTY_GETTER(getter) {
@@ -73,7 +71,7 @@ static NAN_PROPERTY_GETTER(getter) {
     uint8_t* val;
     size_t valLen;
 
-    cache::get(ptr, fd, keyBuf, keyLen, val, valLen);
+    cache::get(ptr, keyBuf, keyLen, val, valLen);
 
     if(val) {
         // TODO bson decode
@@ -107,7 +105,7 @@ static NAN_PROPERTY_SETTER(setter) {
     // fprintf(stderr, "length=%d\n", bsonValue.Length());
 
 
-    FATALIF(cache::set(ptr, fd, keyBuf, keyLen, bsonValue.Data(), bsonValue.Length()), -1, cache::set);
+    FATALIF(cache::set(ptr, keyBuf, keyLen, bsonValue.Data(), bsonValue.Length()), -1, cache::set);
     NanReturnValue(value);
 }
 
@@ -126,11 +124,10 @@ public:
 static NAN_PROPERTY_ENUMERATOR(enumerator) {
     NanScope();
     void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
-    int fd = args.Holder()->GetInternalField(1)->Int32Value();
     // fprintf(stderr, "enumerating properties %x\n", ptr);
 
     KeysEnumerator enumerator;
-    cache::enumerate(ptr, fd, enumerator);
+    cache::enumerate(ptr, enumerator);
 
     NanReturnValue(enumerator.keys);
 }
@@ -145,9 +142,8 @@ static NAN_PROPERTY_DELETER(deleter) {
     uint16_t keyBuf[256];
     property->Write(keyBuf);
     void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
-    int fd = args.Holder()->GetInternalField(1)->Int32Value();
 
-    NanReturnValue(cache::unset(ptr, fd, keyBuf, keyLen) ? NanTrue() : NanFalse());
+    NanReturnValue(cache::unset(ptr, keyBuf, keyLen) ? NanTrue() : NanFalse());
 }
 
 static NAN_PROPERTY_QUERY(querier) {
@@ -160,9 +156,8 @@ static NAN_PROPERTY_QUERY(querier) {
     uint16_t keyBuf[256];
     property->Write(keyBuf);
     void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
-    int fd = args.Holder()->GetInternalField(1)->Int32Value();
 
-    NanReturnValue(cache::contains(ptr, fd, keyBuf, keyLen) ? NanNew<Integer>(0) : Handle<Integer>());
+    NanReturnValue(cache::contains(ptr, keyBuf, keyLen) ? NanNew<Integer>(0) : Handle<Integer>());
 }
 
 void init(Handle<Object> exports) {
@@ -170,7 +165,7 @@ void init(Handle<Object> exports) {
 
     Local<FunctionTemplate> constructor = NanNew<FunctionTemplate>(create);
     Local<ObjectTemplate> inst = constructor->InstanceTemplate();
-    inst->SetInternalFieldCount(2); // ptr, fd
+    inst->SetInternalFieldCount(1); // ptr
     inst->SetNamedPropertyHandler(getter, setter, querier, deleter, enumerator);
     
     exports->Set(NanNew<String>("Cache"), constructor->GetFunction());

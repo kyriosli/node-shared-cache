@@ -36,6 +36,8 @@ typedef struct cache_s {
             uint32_t    head;
             uint32_t    tail;
             uint32_t    nextBit; // next block to look for when allocating block
+
+			rw_lock_t   lock;
         } info; // assert(sizeof(cache.info) < 64)
 
         // bitmap[0~15] is not used
@@ -45,7 +47,7 @@ typedef struct cache_s {
     
 } cache_t;
 
-void init(void* ptr, int fd, size_t size) {
+void init(void* ptr, size_t size) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
     if(cache.info.magic == MAGIC_NUM && cache.info.size == size) { // already initialized
         // fprintf(stderr, "init cache: already initialized\n");
@@ -55,7 +57,7 @@ void init(void* ptr, int fd, size_t size) {
     // fprintf(stderr, "sizeof(cache_t):%d==524288 sizeof(cache.info):%d<64\n", sizeof(cache_t), sizeof(cache.info));
 
     // Use forced write lock to prevent deadlock caused by a crashed thread
-    write_lock_t lock(fd);
+    write_lock_t lock(cache.info.lock);
     
     cache.info.magic = MAGIC_NUM;
     cache.info.size = size;
@@ -224,11 +226,11 @@ inline void slave_next(cache_t& cache, node_slave_t*& node, uint32_t n) {
     }
 }
 
-void get(void* ptr, int fd, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t& retvalLen) {
+void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t& retvalLen) {
     // fprintf(stderr, "cache::get: key len %d\n", keyLen);
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    read_lock_t lock(fd);
+    read_lock_t lock(cache.info.lock);
     uint32_t found = find(cache, key, keyLen);
     if(found) {
         touch(cache, found);
@@ -260,7 +262,7 @@ void get(void* ptr, int fd, const uint16_t* key, size_t keyLen, uint8_t*& retval
     // dump(cache);
 }
 
-int set(void* ptr, int fd, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen) {
+int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen) {
     size_t totalLen = keyLen + valLen + sizeof(node_s) - 1;
     uint32_t blocksRequired = totalLen / 1023 + (totalLen % 1023 ? 1 : 0);
     // fprintf(stderr, "cache::set: total len %d (%d blocks required)\n", totalLen, blocksRequired);
@@ -272,7 +274,7 @@ int set(void* ptr, int fd, const uint16_t* key, size_t keyLen, const uint8_t* va
         return -1;
     }
 
-    write_lock_t lock(fd);
+    write_lock_t lock(cache.info.lock);
 
     // find if key is already exists
     uint32_t found = find(cache, key, keyLen);
@@ -361,9 +363,9 @@ int set(void* ptr, int fd, const uint16_t* key, size_t keyLen, const uint8_t* va
 }
 
 
-void enumerate(void* ptr, int fd, EnumerateCallback& enumerator) {
+void enumerate(void* ptr, EnumerateCallback& enumerator) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
-    read_lock_t lock(fd);
+    read_lock_t lock(cache.info.lock);
     uint32_t curr = cache.info.head;
 
     while(curr) {
@@ -373,17 +375,17 @@ void enumerate(void* ptr, int fd, EnumerateCallback& enumerator) {
     }
 }
 
-bool contains(void* ptr, int fd, const uint16_t* key, size_t keyLen) {
+bool contains(void* ptr, const uint16_t* key, size_t keyLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    read_lock_t lock(fd);
+    read_lock_t lock(cache.info.lock);
     return find(cache, key, keyLen);
 }
 
-bool unset(void* ptr, int fd, const uint16_t* key, size_t keyLen) {
+bool unset(void* ptr, const uint16_t* key, size_t keyLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    write_lock_t lock(fd);
+    write_lock_t lock(cache.info.lock);
     uint32_t found = find(cache, key, keyLen);
     if(found) {
         dropNode(cache, found);
