@@ -6,7 +6,9 @@ It supports auto memory-management and fast object serialization. It uses a hash
 
 ## Terms of Use
 
-This software (source code and its binary builds) is absolutely copy free and any download or modification except for unprohibited commercial use.
+This software (source code and its binary builds) is absolutely copy free and any download or modification is permitted except for unprohibited
+commercial use.
+
 But due to the complexity of this software, any bugs or runtime exceptions could happen when programs which includeed it run into an unexpected
 situation, which in most cases should be harmless but also have the chance to cause:
 
