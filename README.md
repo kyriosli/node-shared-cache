@@ -26,8 +26,8 @@ So when you are using this software, DO
   - avoid undefined behavior to happen
 
 To avoid data crupption, we use a read-write lock to ensure that data modification is exclusive. But when a program is writting data when something
-bad happens, for example, a SIGKILL, happens that crashes the program before the write is complete and lock is released, other processes may not be
-able to enter the exclusive region again. I do not use an auto recovery lock such as `flock` that will automatically release when process exits, just
+bad, for example, a SIGKILL, happens that crashes the program before the write operation is complete and lock is released, other processes may not be
+able to enter the exclusive region again. I do not use an auto recovery lock such as `flock`, which will automatically release when process exits, just
 in case that wrong data is returned when performing a reading operation, or even, causing a segment fault.
 
 ## usage
@@ -241,3 +241,7 @@ The result is:
     JSON.parse: 2083ms
     binary unserialization: 2225ms
 
+
+## TODO
+
+  - add dead-lock auto recovery when data is inconsistent
