@@ -4,6 +4,30 @@ Interprocess shared memory cache for Node.JS
 
 It supports auto memory-management and fast object serialization. It uses a hashmap and LRU cache internally to maintain its contents.
 
+## Terms of Use
+
+This software (source code and its binary builds) is absolutely copy free and any download or modification except for unprohibited commercial use.
+But due to the complexity of this software, any bugs or runtime exceptions could happen when programs which includeed it run into an unexpected
+situation, which in most cases should be harmless but also have the chance to cause:
+
+  - program crash
+  - system down
+  - software damage
+  - hardware damage
+
+which would lead to data corruption or even economic losses.
+
+So when you are using this software, DO
+
+  - check the data
+  - double check the data
+  - avoid undefined behavior to happen
+
+To avoid data crupption, we use a read-write lock to ensure that data modification is exclusive. But when a program is writting data when something
+bad happens, for example, a SIGKILL, happens that crashes the program before the write is complete and lock is released, other processes may not be
+able to enter the exclusive region again. I do not use an auto recovery lock such as `flock` that will automatically release when process exits, just
+in case that wrong data is returned when performing a reading operation, or even, causing a segment fault.
+
 ## usage
 
 ```js
