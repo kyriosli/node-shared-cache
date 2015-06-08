@@ -4,6 +4,17 @@ Interprocess shared memory cache for Node.JS
 
 It supports auto memory-management and fast object serialization. It uses a hashmap and LRU cache internally to maintain its contents.
 
+## Install
+
+Install `node-gyp` first if you do not have it installed:
+
+    sudo npm install node-gyp -g
+
+Then
+
+    npm install kyriosli/node-shared-cache
+
+
 ## Terms of Use
 
 This software (source code and its binary builds) is absolutely copy free and any download or modification is permitted except for unprohibited

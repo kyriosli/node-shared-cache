@@ -1,0 +1,31 @@
+{
+  "name": "node-shared-cache",
+  "version": "1.0.0",
+  "description": "Interprocess shared memory cache for Node.JS",
+  "main": "index.js",
+  "dependencies": {
+    "nan": "*"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "node test",
+    "install": "node-gyp rebuild"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kyriosli/node-shared-cache.git"
+  },
+  "keywords": [
+    "Node.JS",
+    "LRU",
+    "Cache",
+    "Shared"
+  ],
+  "author": "Kyrios",
+  "license": "ISC",
+  "gypfile": true,
+  "bugs": {
+    "url": "https://github.com/kyriosli/node-shared-cache/issues"
+  },
+  "homepage": "https://github.com/kyriosli/node-shared-cache"
+}
