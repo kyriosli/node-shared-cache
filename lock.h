@@ -2,12 +2,12 @@
 #define	_LOCK_H
 
 #include <stdint.h>
-#define TSL(mutex) __sync_lock_test_and_set(&mutex, 1)
-#define SPIN(mutex) while(TSL(mutex))
 
 typedef	int32_t	mutex_t;
 
 #ifdef	__GNUC__
+
+#if GCC_VERSION > 46300
 
 template<typename t>
 inline t cmpxchg(t& var, t oldval, t newval) {
@@ -18,7 +18,19 @@ inline t cmpxchg(t& var, t oldval, t newval) {
 #define xchg(var, newval) __atomic_exchange_n(&var, newval, __ATOMIC_ACQ_REL);	
 #define	atomic_dec(var) __atomic_fetch_sub(&var, 1, __ATOMIC_ACQ_REL)
 
+#else
+
+#define cmpxchg(var, oldval, newval) __sync_val_compare_and_swap(&var, oldval, newval)
+
+#define xchg(var, newval) __sync_lock_test_and_set(&var, newval)
+#define	atomic_dec(var) __sync_fetch_and_sub (&var, 1)
+
 #endif
+#endif
+
+
+#define TSL(mutex) __sync_lock_test_and_set(&mutex, 1)
+#define SPIN(mutex) while(TSL(mutex))
 
 #ifdef	linux
 /* Use futex to implement mutex in linux */
