@@ -29,7 +29,7 @@ inline t cmpxchg(t& var, t oldval, t newval) {
 #endif
 
 
-#define TSL(mutex) __sync_lock_test_and_set(&mutex, 1)
+#define TSL(mutex) xchg(mutex, 1)
 #define SPIN(mutex) while(TSL(mutex))
 
 #ifdef	linux
