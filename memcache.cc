@@ -146,8 +146,7 @@ inline uint32_t hashsum(const uint16_t* key, size_t keyLen) {
     return hash;
 }
 
-inline uint32_t find(cache_t& cache, const uint16_t* key, size_t keyLen) {
-    uint32_t hash = hashsum(key, keyLen);
+inline uint32_t find(cache_t& cache, const uint16_t* key, size_t keyLen, uint32_t hash) {
     
     uint32_t curr = cache.hashmap[hash & 0xffff];
     // fprintf(stderr, "cache::find: finding match key (len:%d)\n", keyLen);
@@ -230,8 +229,10 @@ void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t
     // fprintf(stderr, "cache::get: key len %d\n", keyLen);
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
+    uint32_t hash = hashsum(key, keyLen);
+
     read_lock_t lock(cache.info.lock);
-    uint32_t found = find(cache, key, keyLen);
+    uint32_t found = find(cache, key, keyLen, hash);
     if(found) {
         touch(cache, found);
         node_t* pnode = address<node_t>(&cache, found);
@@ -274,10 +275,12 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
         return -1;
     }
 
+    uint32_t hash = hashsum(key, keyLen);
+
     write_lock_t lock(cache.info.lock);
 
     // find if key is already exists
-    uint32_t found = find(cache, key, keyLen);
+    uint32_t found = find(cache, key, keyLen, hash);
     node_t* selectedBlock;
 
     if(found) { // update
@@ -306,8 +309,8 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
         node_t& node = *selectedBlock;
         node.blocks = blocksRequired;
 
-        node.hash = hashsum(key, keyLen);
-        uint32_t& hash_head = cache.hashmap[node.hash & 0xffff];
+        node.hash = hash;
+        uint32_t& hash_head = cache.hashmap[hash & 0xffff];
         node.hash_next = hash_head; // insert into linked list
         hash_head = firstBlock;
         node.keyLen = keyLen;
@@ -378,15 +381,19 @@ void enumerate(void* ptr, EnumerateCallback& enumerator) {
 bool contains(void* ptr, const uint16_t* key, size_t keyLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
+    uint32_t hash = hashsum(key, keyLen);
+
     read_lock_t lock(cache.info.lock);
-    return find(cache, key, keyLen);
+    return find(cache, key, keyLen, hash);
 }
 
 bool unset(void* ptr, const uint16_t* key, size_t keyLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
+    uint32_t hash = hashsum(key, keyLen);
+
     write_lock_t lock(cache.info.lock);
-    uint32_t found = find(cache, key, keyLen);
+    uint32_t found = find(cache, key, keyLen, hash);
     if(found) {
         dropNode(cache, found);
     }

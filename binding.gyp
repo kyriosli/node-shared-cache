@@ -7,13 +7,14 @@
         "memcache.cc",
         "bson.cc"
       ],
-      "include_dirs" : [
+      "include_dirs": [
         "<!(node -e \"require('nan')\")"
       ],
       "link_settings": {
-		"libraries": [
-		  "-lrt"
-		]
-	  }
+        "libraries": [
+          "-lrt"
+        ]
+      }
     }
-  ]}
+  ]
+}
