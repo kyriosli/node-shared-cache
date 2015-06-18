@@ -15,7 +15,7 @@ try {
 }
 */
 
-var obj = new binding.Cache("test", 544<<10, 10);
+var obj = new binding.Cache("test2", 514<<10, 6);
 obj.foo = "bar";
 
 assert.strictEqual(obj.foo, "bar");
@@ -49,14 +49,14 @@ assert.strictEqual(obj.foo, undefined);
 
 
 console.time('LRU cache replacement');
-for(var i = 0; i < 1000000; i+=3) {
+for(var i = 0; i < 64; i++) {
     obj['test' + i] = i;
     assert.strictEqual(obj['test' + i] , i);
 }
 console.timeEnd('LRU cache replacement');
 assert.ifError('test0' in obj);
 
-var longData = Array(15).join(Array(64).join('abcdefgh')); // 17 blocks
+var longData = Array(96).join('abcdefgh');
 
 obj.test = longData;
 assert.strictEqual(obj.test, longData);

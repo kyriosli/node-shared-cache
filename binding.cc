@@ -30,38 +30,47 @@ static NAN_METHOD(create) {
 
     NanScope();
 
-    size_t len = args[1]->Uint32Value();
-    if(len < 557056) {
-        return NanThrowError("cache size should be greater than 544KB");
-    } else if(len > 2147483647) {
-        return NanThrowError("cache size should be less than 2GB");
+    uint32_t size = args[1]->Uint32Value();
+    uint32_t block_size_shift = args[2]->Uint32Value();
+    if(!block_size_shift) block_size_shift = 6;
+
+    uint32_t blocks = size >> (5 + block_size_shift) << 5; // 32 aligned
+    size = blocks << block_size_shift;
+
+    if(block_size_shift < 6) {
+        return NanThrowError("block size should not be smaller than 64 bytes");
+    } else if(block_size_shift > 11) {
+        return NanThrowError("block size should not be greater than 2 KB");
+    } else if(blocks < (HEADER_SIZE >> block_size_shift)) {
+        return NanThrowError("total size should be larger than 512 KB");
+    } else if(blocks > 2097152) {
+        return NanThrowError("block count should be smaller than 2097152");
     }
-    len &= ~32767; // 32KB aligned
 
     // fprintf(stderr, "allocating %d bytes memory\n", len);
 
     int fd;
 
     FATALIF(fd = shm_open(*NanUtf8String(args[0]), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR), -1, shm_open);
-    FATALIF(ftruncate(fd, len), -1, ftruncate);
+    FATALIF(ftruncate(fd, size), -1, ftruncate);
 
     void* ptr;
 
-    FATALIF(ptr = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0), MAP_FAILED, mmap);
+    FATALIF(ptr = mmap(NULL, blocks << block_size_shift, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0), MAP_FAILED, mmap);
 
-    cache::init(ptr, len);
+    cache::init(ptr, blocks, block_size_shift);
 
     NanSetInternalFieldPointer(args.Holder(), 0, ptr);
     NanReturnUndefined();
 }
 
 #define PROPERTY_SCOPE(ptr, keyLen, keyBuf) size_t keyLen = property->Length();\
-    if(keyLen > 255) {\
-        return NanThrowError("length of property name should not be greater than 255");\
+    void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);\
+    if(keyLen > (1 << (*reinterpret_cast<uint16_t*>(ptr) - 1)) - 16) {\
+        return NanThrowError("length of property name should not be greater than (block size - 32) / 2");\
     }\
     uint16_t keyBuf[256];\
     property->Write(keyBuf);\
-    void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);\
 
 
 static NAN_PROPERTY_GETTER(getter) {
@@ -88,22 +97,6 @@ static NAN_PROPERTY_SETTER(setter) {
     PROPERTY_SCOPE(ptr, keyLen, keyBuf);
 
     bson::BSONValue bsonValue(value);
-
-//  fputs("      | 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f | 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f", stderr);
-//  for(uint32_t i=0,L=bsonValue.Length(); i<L;i++) {
-//      uint8_t n = bsonValue.Data()[i];
-//      if(!(i&511)) {
-//          fputs("\n------|-------------------------------------------------|------------------------------------------------", stderr);
-//      }
-//      if(!(i&31)) {
-//          fprintf(stderr, "\n%06x| ", i);
-//      } else if(!(i&15)) {
-//          fputs("| ", stderr);
-//      }
-//      fprintf(stderr, n > 15 ? "%x " : "0%x ", n);
-//  }
-    // fprintf(stderr, "length=%d\n", bsonValue.Length());
-
 
     FATALIF(cache::set(ptr, keyBuf, keyLen, bsonValue.Data(), bsonValue.Length()), -1, cache::set);
     NanReturnValue(value);

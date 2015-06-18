@@ -17,7 +17,7 @@ if(process.argv[2] !== 'worker') {
 
 var n = 0, stopped = false;
 var binding = require('./build/Release/binding.node');
-var obj = new binding.Cache("test", 557056);
+var obj = new binding.Cache("test", 544<<10, 10);
 
 
 process.on('SIGINT', function () {

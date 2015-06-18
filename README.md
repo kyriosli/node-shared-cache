@@ -72,13 +72,27 @@ test.self === test; // true
 
 #### constructor
 
-    function Cache(name, size)
+    function Cache(name, size, optional block_size)
 
-`name` represents a file name in shared memory, `size` represents memory size in bytes to be used. Note that:
+`name` represents a file name in shared memory, `size` represents memory size in bytes to be used. `block_size` denotes the size of the unit of the memory block.
 
-  - `size` should not be smaller than 557056 (544KB)
-  - `size` should not be larger than 2147483647 (2GB)
-  - `size` is 32KB aligned
+`block_size` can be any of:
+
+  - cache.SIZE_64 (6): 64 bytes (default)
+  - cache.SIZE_128 (7): 128 bytes
+  - cache.SIZE_256 (8): 256 bytes
+  - cache.SIZE_512 (9): 512 bytes
+  - cache.1K (10): 1KB
+  - cache.2K (11): 2KB
+
+Note that:
+
+  - `size` should not be smaller than 524288 (512KB)
+  - total block count (`size` / 1 << `block_size`) should not be larger than 2097152
+  - block count is 32-aligned
+  - key length should not be larger than `(block_size - 32) >> 1`, for example, when block size is 64 bytes, maximum key length is 16 chars.
+
+So when block_size is set to default, the maximum memory size that can be used is 128M, and the maximum keys that can be stored is 2088960 (8192 blocks is used for data structure)
 
 #### property setter
 

@@ -1,8 +1,11 @@
 #ifndef MEMCACHE_H_
 #define MEMCACHE_H_
 
+
+#define HEADER_SIZE 524288
+
 namespace cache {
-    void init(void* ptr, size_t size);
+    void init(void* ptr, uint32_t blocks, uint32_t block_size_shift);
     int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen);
 
     class EnumerateCallback {
