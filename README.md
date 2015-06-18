@@ -88,9 +88,9 @@ test.self === test; // true
 Note that:
 
   - `size` should not be smaller than 524288 (512KB)
-  - total block count (`size` / 1 << `block_size`) should not be larger than 2097152
+  - total block count (`size / (1 << block_size)`) should not be larger than 2097152
   - block count is 32-aligned
-  - key length should not be larger than `(block_size - 32) >> 1`, for example, when block size is 64 bytes, maximum key length is 16 chars.
+  - key length should not be larger than `(block_size - 32) / 2`, for example, when block size is 64 bytes, maximum key length is 16 chars.
 
 So when block_size is set to default, the maximum memory size that can be used is 128M, and the maximum keys that can be stored is 2088960 (8192 blocks is used for data structure)
 
@@ -120,6 +120,8 @@ Tests are run under a virtual machine with one processor:
     cache size  : 15360 KB    
     ...
 
+Block size is set to 64 and 1MB of memory is used.
+
 ### Setting property
 
 When setting property 100w times:
@@ -144,8 +146,8 @@ console.timeEnd('shared cache');
 
 The result is:
 
-    plain obj: 229ms
-    shared cache: 588ms
+    plain obj: 236ms
+    shared cache: 512ms (1:2.17)
 
 ### Getting property
 
@@ -168,7 +170,7 @@ console.timeEnd('read shared cache');
 The result is:
 
     read plain obj: 135ms
-    read shared cache: 639ms
+    read shared cache: 599ms (1:4.44)
 
 When trying to read keys that are not existed:
 
@@ -188,8 +190,8 @@ console.timeEnd('read shared cache with key absent');
 
 The result is:
 
-    read plain obj with key absent: 254ms
-    read shared cache with key absent: 538ms
+    read plain obj with key absent: 253ms
+    read shared cache with key absent: 530ms (1:2.09)
 
 ### Enumerating properties
 
@@ -211,8 +213,8 @@ console.timeEnd('enumerate shared cache');
 
 The result is:
 
-    enumerate plain obj: 1218ms
-    enumerate shared cache: 4294ms
+    enumerate plain obj: 1189ms
+    enumerate shared cache: 4311ms (1:3.63)
 
 Warn: Because the shared memory can be modified at any time even the current Node.js
 process is running, depending on keys enumeration result to determine whether a key
@@ -261,10 +263,10 @@ console.timeEnd('binary unserialization');
 
 The result is:
 
-    JSON.stringify: 6183ms
-    binary serialization: 2633ms
-    JSON.parse: 2083ms
-    binary unserialization: 2225ms
+    JSON.stringify: 5963ms
+    binary serialization: 2480ms (2.40:1)
+    JSON.parse: 2016ms
+    binary unserialization: 2081ms (1:1.03)
 
 
 ## TODO
