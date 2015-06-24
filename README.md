@@ -147,8 +147,8 @@ console.timeEnd('shared cache');
 
 The result is:
 
-    plain obj: 236ms
-    shared cache: 512ms (1:2.17)
+    plain obj: 227ms
+    shared cache: 492ms (1:2.17)
 
 ### Getting property
 
@@ -170,8 +170,8 @@ console.timeEnd('read shared cache');
 
 The result is:
 
-    read plain obj: 135ms
-    read shared cache: 599ms (1:4.44)
+    read plain obj: 138ms
+    read shared cache: 590ms (1:4.27)
 
 When trying to read keys that are not existed:
 
@@ -191,8 +191,8 @@ console.timeEnd('read shared cache with key absent');
 
 The result is:
 
-    read plain obj with key absent: 253ms
-    read shared cache with key absent: 530ms (1:2.09)
+    read plain obj with key absent: 265ms
+    read shared cache with key absent: 595ms (1:2.24)
 
 ### Enumerating properties
 
@@ -214,8 +214,8 @@ console.timeEnd('enumerate shared cache');
 
 The result is:
 
-    enumerate plain obj: 1189ms
-    enumerate shared cache: 4311ms (1:3.63)
+    enumerate plain obj: 1201ms
+    enumerate shared cache: 4262ms (1:3.55)
 
 Warn: Because the shared memory can be modified at any time even the current Node.js
 process is running, depending on keys enumeration result to determine whether a key
@@ -264,10 +264,10 @@ console.timeEnd('binary unserialization');
 
 The result is:
 
-    JSON.stringify: 5963ms
-    binary serialization: 2480ms (2.40:1)
-    JSON.parse: 2016ms
-    binary unserialization: 2081ms (1:1.03)
+    JSON.stringify: 5876ms
+    binary serialization: 2523ms (2.33:1)
+    JSON.parse: 2042ms
+    binary unserialization: 2098ms (1:1.03)
 
 
 ## TODO
