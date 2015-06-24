@@ -32,19 +32,17 @@ static NAN_METHOD(create) {
 
     uint32_t size = args[1]->Uint32Value();
     uint32_t block_size_shift = args[2]->Uint32Value();
-    if(!block_size_shift) block_size_shift = 6;
+    if(!block_size_shift || block_size_shift > ) block_size_shift = 6;
 
     uint32_t blocks = size >> (5 + block_size_shift) << 5; // 32 aligned
     size = blocks << block_size_shift;
 
     if(block_size_shift < 6) {
         return NanThrowError("block size should not be smaller than 64 bytes");
-    } else if(block_size_shift > 11) {
-        return NanThrowError("block size should not be greater than 2 KB");
-    } else if(blocks < (HEADER_SIZE >> block_size_shift)) {
-        return NanThrowError("total size should be larger than 512 KB");
-    } else if(blocks > 2097152) {
-        return NanThrowError("block count should be smaller than 2097152");
+    } else if(block_size_shift > 14) {
+        return NanThrowError("block size should not be larger than 16 KB");
+    }else if(size < 524288) {
+        return NanThrowError("total_size should be larger than 512 KB");
     }
 
     // fprintf(stderr, "allocating %d bytes memory\n", len);

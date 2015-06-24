@@ -2,7 +2,7 @@
 #define MEMCACHE_H_
 
 
-#define HEADER_SIZE 524288
+#define HEADER_SIZE 262144
 
 namespace cache {
     void init(void* ptr, uint32_t blocks, uint32_t block_size_shift);

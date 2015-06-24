@@ -82,13 +82,14 @@ test.self === test; // true
   - cache.SIZE_128 (7): 128 bytes
   - cache.SIZE_256 (8): 256 bytes
   - cache.SIZE_512 (9): 512 bytes
-  - cache.1K (10): 1KB
-  - cache.2K (11): 2KB
+  - cache.SIZE_1K (10): 1KB
+  - cache.SIZE_2K (11): 2KB
+  - ...
+  - cache.SIZE_16K (14): 16KB
 
 Note that:
 
   - `size` should not be smaller than 524288 (512KB)
-  - total block count (`size / (1 << block_size)`) should not be larger than 2097152
   - block count is 32-aligned
   - key length should not be larger than `(block_size - 32) / 2`, for example, when block size is 64 bytes, maximum key length is 16 chars.
 
