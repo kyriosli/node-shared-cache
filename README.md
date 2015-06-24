@@ -100,10 +100,6 @@ So when block_size is set to default, the maximum memory size that can be used i
 
     set(name, value)
 
-Note that:
-
-  - the length of name should not be longer than 256 characters (limited by internal design)
-
 ## Performance
 
 Tests are run under a virtual machine with one processor: 
