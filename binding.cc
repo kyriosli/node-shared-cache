@@ -104,16 +104,17 @@ static NAN_PROPERTY_SETTER(setter) {
     NanReturnValue(value);
 }
 
-class KeysEnumerator: public cache::EnumerateCallback {
+class KeysEnumerator {
 public:
     uint32_t length;
     Local<Array> keys;
 
-    void next(uint16_t* key, size_t keyLen) {
-        keys->Set(length++, NanNew<String>(key, keyLen));
+    static void next(void* enumerator, uint16_t* key, size_t keyLen) {
+        KeysEnumerator* self = static_cast<KeysEnumerator*>(enumerator);
+        self->keys->Set(self->length++, NanNew<String>(key, keyLen));
     }
 
-    KeysEnumerator() : length(0), keys(NanNew<Array>()) {}
+    inline KeysEnumerator() : length(0), keys(NanNew<Array>()) {}
 };
 
 static NAN_PROPERTY_ENUMERATOR(enumerator) {
@@ -122,7 +123,7 @@ static NAN_PROPERTY_ENUMERATOR(enumerator) {
     // fprintf(stderr, "enumerating properties %x\n", ptr);
 
     KeysEnumerator enumerator;
-    cache::enumerate(ptr, enumerator);
+    cache::enumerate(ptr, &enumerator, KeysEnumerator::next);
 
     NanReturnValue(enumerator.keys);
 }

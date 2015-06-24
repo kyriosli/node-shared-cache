@@ -8,12 +8,7 @@ namespace cache {
     void init(void* ptr, uint32_t blocks, uint32_t block_size_shift);
     int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen);
 
-    class EnumerateCallback {
-    public:
-        virtual void next(uint16_t* key, size_t keyLen) = 0;
-    };
-
-    void enumerate(void* ptr, EnumerateCallback& enumerator);
+    void enumerate(void* ptr, void* enumerator, void(* callback)(void*,uint16_t*,size_t));
 
     void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& val, size_t& valLen);
 

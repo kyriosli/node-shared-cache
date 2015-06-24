@@ -383,14 +383,14 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
 }
 
 
-void enumerate(void* ptr, EnumerateCallback& enumerator) {
+void enumerate(void* ptr, void* enumerator, void(* callback)(void*,uint16_t*,size_t)) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
     read_lock_t lock(cache.info.lock);
     uint32_t curr = cache.info.head;
 
     while(curr) {
         node_t& node = *cache.address<node_t>(curr);
-        enumerator.next(node.key, node.keyLen);
+        callback(enumerator, node.key, node.keyLen);
         curr = node.next;
     }
 }
