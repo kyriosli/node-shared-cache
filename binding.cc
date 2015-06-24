@@ -75,15 +75,19 @@ static NAN_PROPERTY_GETTER(getter) {
     NanScope();
     PROPERTY_SCOPE(ptr, keyLen, keyBuf);
     
-    uint8_t* val;
-    size_t valLen;
+    uint8_t tmp[1024];
+
+    uint8_t* val = tmp;
+    size_t valLen = sizeof(tmp);
 
     cache::get(ptr, keyBuf, keyLen, val, valLen);
 
     if(val) {
         // TODO bson decode
         Handle<Value> ret = bson::parse(val);
-        delete[] val;
+        if(valLen > sizeof(tmp)) {
+            delete[] val;
+        }
         NanReturnValue(ret);
     } else {
         NanReturnUndefined();

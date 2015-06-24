@@ -256,8 +256,15 @@ void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t
     if(found) {
         cache.touch(found);
         node_t* pnode = cache.address<node_t>(found);
-        size_t  valLen = retvalLen = pnode->valLen;
-        uint8_t* val = retval = new uint8_t[valLen];
+        size_t valLen = pnode->valLen;
+        uint8_t* val;
+
+        if(valLen > retvalLen) {
+            val = retval = new uint8_t[valLen];
+        } else {
+            val = retval;
+        }
+        retvalLen = valLen;
 
         uint8_t* currentBlock = reinterpret_cast<uint8_t*>(pnode);
         uint32_t offset = sizeof(node_t) + (keyLen << 1);

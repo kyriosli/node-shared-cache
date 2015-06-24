@@ -171,7 +171,7 @@ console.timeEnd('read shared cache');
 The result is:
 
     read plain obj: 138ms
-    read shared cache: 590ms (1:4.27)
+    read shared cache: 524ms (1:3.80)
 
 When trying to read keys that are not existed:
 
