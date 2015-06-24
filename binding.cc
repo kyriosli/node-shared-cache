@@ -15,6 +15,8 @@
 #define NanReturnEmpty(TYPE)    return Handle<TYPE>()
 #endif
 
+#define CACHE_HEADER_IN_WORDS   131078
+
 using namespace v8;
 
 #define FATALIF(expr, n, method)    if((expr) == n) {\
@@ -63,8 +65,11 @@ static NAN_METHOD(create) {
 }
 
 #define PROPERTY_SCOPE(ptr, keyLen, keyBuf) size_t keyLen = property->Length();\
+    if(keyLen > 256) {\
+        return NanThrowError("length of property name should not be greater than 256");\
+    }\
     void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);\
-    if(0) {\
+    if((keyLen << 1) + 32 > 1 << static_cast<uint16_t*>(ptr)[CACHE_HEADER_IN_WORDS]) {\
         return NanThrowError("length of property name should not be greater than (block size - 32) / 2");\
     }\
     uint16_t keyBuf[256];\
@@ -131,13 +136,18 @@ static NAN_PROPERTY_ENUMERATOR(enumerator) {
 static NAN_PROPERTY_DELETER(deleter) {
     NanScope();
     size_t keyLen = property->Length();
-    if(keyLen > 255) {
-        NanThrowError("length of property name should not be greater than 255");
+    if(keyLen > 256) {
+        NanThrowError("length of property name should not be greater than 256");
+        NanReturnEmpty(Boolean);
+    }
+    void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
+    if((keyLen << 1) + 32 > 1 << static_cast<uint16_t*>(ptr)[CACHE_HEADER_IN_WORDS]) {
+        NanThrowError("length of property name should not be greater than (block size - 32) / 2");
         NanReturnEmpty(Boolean);
     }
     uint16_t keyBuf[256];
     property->Write(keyBuf);
-    void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
+
 
     NanReturnValue(cache::unset(ptr, keyBuf, keyLen) ? NanTrue() : NanFalse());
 }
@@ -145,13 +155,17 @@ static NAN_PROPERTY_DELETER(deleter) {
 static NAN_PROPERTY_QUERY(querier) {
     NanScope();
     size_t keyLen = property->Length();
-    if(keyLen > 255) {
-        NanThrowError("length of property name should not be greater than 255");
+    if(keyLen > 256) {
+        NanThrowError("length of property name should not be greater than 256");
+        NanReturnEmpty(Integer);
+    }
+    void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
+    if((keyLen << 1) + 32 > 1 << static_cast<uint16_t*>(ptr)[CACHE_HEADER_IN_WORDS]) {
+        NanThrowError("length of property name should not be greater than (block size - 32) / 2");
         NanReturnEmpty(Integer);
     }
     uint16_t keyBuf[256];
     property->Write(keyBuf);
-    void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
 
     NanReturnValue(cache::contains(ptr, keyBuf, keyLen) ? NanNew<Integer>(0) : Handle<Integer>());
 }

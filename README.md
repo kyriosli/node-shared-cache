@@ -91,7 +91,8 @@ Note that:
 
   - `size` should not be smaller than 524288 (512KB)
   - block count is 32-aligned
-  - key length should not be larger than `(block_size - 32) / 2`, for example, when block size is 64 bytes, maximum key length is 16 chars.
+  - key length should not be greater than `(block_size - 32) / 2`, for example, when block size is 64 bytes, maximum key length is 16 chars.
+  - key length should also not be greater than 256
 
 So when block_size is set to default, the maximum memory size that can be used is 128M, and the maximum keys that can be stored is 2088960 (8192 blocks is used for data structure)
 
