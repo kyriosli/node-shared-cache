@@ -186,7 +186,7 @@ void init(void* ptr, uint32_t blocks, uint32_t block_size_shift) {
         // fprintf(stderr, "init cache: already initialized\n");
         return;
     }
-    memset(&cache, 0, sizeof(cache_t));
+    memset(&cache, 0, sizeof(cache_t) + (blocks << 2) + (blocks >> 3));
     // fprintf(stderr, "sizeof(cache_t):%d==262188 sizeof(cache.info):%d<64\n", sizeof(cache_t), sizeof(cache.info));
 
     // Use forced write lock to prevent deadlock caused by a crashed thread
@@ -203,7 +203,7 @@ void init(void* ptr, uint32_t blocks, uint32_t block_size_shift) {
     // mark bits as used
 
     uint32_t mask = 0;
-    for(int i = cache.info.next_bitmap_index << 5; i < first_block; i++) {
+    for(uint32_t i = cache.info.next_bitmap_index << 5; i < first_block; i++) {
         mask |= 1 << i;
     }
     cache.nexts[blocks + cache.info.next_bitmap_index] = mask;

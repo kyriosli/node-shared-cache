@@ -15,9 +15,7 @@ try {
 }
 */
 
-var obj = new binding.Cache("test2", 512<<10, 6);
-
-
+var obj = new binding.Cache("test3", 512<<10, 14);
 obj.foo = "bar";
 
 assert.strictEqual(obj.foo, "bar");
@@ -47,7 +45,7 @@ assert.strictEqual(obj.foo, undefined);
 
 
 console.time('LRU cache replacement');
-for(var i = 0; i < 4097; i++) {
+for(var i = 0; i < 17; i++) {
     obj['test' + i] = i;
     assert.strictEqual(obj['test' + i] , i);
 }
