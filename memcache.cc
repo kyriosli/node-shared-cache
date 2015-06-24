@@ -4,7 +4,7 @@
 #include "lock.h"
 #include "memcache.h"
 
-#define MAGIC_NUM 0xdeadbeef
+#define MAGIC 0xdeadbeef
 
 namespace cache {
 
@@ -43,10 +43,6 @@ typedef struct cache_s {
 
     };
 
-    inline uint32_t* bitmap() {
-        return nexts + info.blocks_total;
-    }
-
     template<typename T>
     inline T* address(uint32_t block) {
         return reinterpret_cast<T*>(reinterpret_cast<uint8_t*>(this) + (block << info.block_size_shift));
@@ -68,14 +64,16 @@ typedef struct cache_s {
     }
 
     inline uint32_t selectOne() {
-        uint16_t& curr = info.next_bitmap_index;
-        uint32_t bits = bitmap[curr];
+        uint32_t* bitmap = nexts + info.blocks_total;
 
+        uint32_t& curr = info.next_bitmap_index;
+        uint32_t bits = bitmap[curr];
         while(bits == 0xffffffff) {
             curr++;
-            if(curr == (info.blocks_total + (HEADER_SIZE >> info.block_size_shift)) >> 5) {
-                curr = 1 << (14 - info.block_size_shift);
+            if(curr == info.blocks_total >> 5) {
+                curr = info.first_block >> 5;
             }
+            // fprintf(stderr, "will try slot %d\n", curr);
             bits = bitmap[curr];
         }
         // assert(bits != 0xffffffff)
@@ -85,6 +83,7 @@ typedef struct cache_s {
     }
 
     inline void release(uint32_t block) {
+        uint32_t* bitmap = nexts + info.blocks_total;
         uint32_t count = 0;
         for(uint32_t next = block; next; next = nexts[next]) {
             // fprintf(stderr, "free block %d assert(bit:%d) %x ^ %x = %x\n", next, (bitmap[next >> 5] >> (next & 31)) & 1, bitmap[next >> 5], 1 << (next & 31), bitmap[next >> 5] ^ 1 << (next & 31));
@@ -116,11 +115,10 @@ typedef struct cache_s {
     }
 
     inline uint32_t allocate(uint32_t count) {
-        uint32_t target = info.blocks_total - count;
+        uint32_t target = info.blocks_available - count;
         // fprintf(stderr, "allocate: total=%d used=%d, count=%d, target=%d\n", info.blocks_total, info.blocks_used, count, target);
         if(info.blocks_used > target) { // not enough
             do {
-                // fprintf(stderr, "allocate: will drop head key %s blocks freed: %d\n", keyBuf, headBlock->blocks);
                 dropNode(info.head);
             } while (info.blocks_used > target);
         }
@@ -180,7 +178,7 @@ void init(void* ptr, uint32_t blocks, uint32_t block_size_shift) {
 
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    if(cache.info.magic === MAGIC &&
+    if(cache.info.magic == MAGIC &&
        cache.info.blocks_total == blocks &&
        cache.info.blocks_available == blocks_available &&
        cache.info.block_size_shift == block_size_shift &&
@@ -189,7 +187,7 @@ void init(void* ptr, uint32_t blocks, uint32_t block_size_shift) {
         return;
     }
     memset(&cache, 0, sizeof(cache_t));
-    // fprintf(stderr, "sizeof(cache_t):%d==524288 sizeof(cache.info):%d<64\n", sizeof(cache_t), sizeof(cache.info));
+    // fprintf(stderr, "sizeof(cache_t):%d==262188 sizeof(cache.info):%d<64\n", sizeof(cache_t), sizeof(cache.info));
 
     // Use forced write lock to prevent deadlock caused by a crashed thread
     write_lock_t lock(cache.info.lock);
@@ -208,31 +206,31 @@ void init(void* ptr, uint32_t blocks, uint32_t block_size_shift) {
     for(int i = cache.info.next_bitmap_index << 5; i < first_block; i++) {
         mask |= 1 << i;
     }
-    cache.bitmap()[cache.info.next_bitmap_index] = mask;
-    // fprintf(stderr, "init cache: size %d, blocks %d, usage %d/%d\n", size, blocks, cache.info.blocks_used, cache.info.blocks_total);
+    cache.nexts[blocks + cache.info.next_bitmap_index] = mask;
+    // fprintf(stderr, "init cache: size %d, blocks %d, usage %d/%d\n", blocks << block_size_shift, blocks, cache.info.blocks_used, cache.info.blocks_available);
 }
 
 static void dump(cache_t& cache) {
-    fprintf(stderr, "== DUMP START: head: %d tail:%d", cache.info.head, cache.info.tail);
+    // fprintf(stderr, "== DUMP START: head: %d tail:%d", cache.info.head, cache.info.tail);
     uint32_t prev = 0;
 
     for(uint32_t curr = cache.info.head; curr;) {
         node_t& node = *cache.address<node_t>(curr);
         if(node.prev != prev) {
-            fprintf(stderr, "ERROR: %d->prev=%d != %d\n", curr, node.prev, prev);
+            // fprintf(stderr, "ERROR: %d->prev=%d != %d\n", curr, node.prev, prev);
         }
-        fprintf(stderr, "\n%d(hash:%d prev:%d next:%d)", curr, node.hash, node.prev, node.next);
+        // fprintf(stderr, "\n%d(hash:%d prev:%d next:%d)", curr, node.hash, node.prev, node.next);
         for(uint32_t next = cache.nexts[curr]; next; ) {
-            fprintf(stderr, "-->%d", next);
+            // fprintf(stderr, "-->%d", next);
             next = cache.nexts[next];
         }
         prev = curr;
         curr = node.next;
     }
     if(prev != cache.info.tail) {
-        fprintf(stderr, "\nERROR: ended at %d != tail(%d)\n", prev, cache.info.tail);
+        // fprintf(stderr, "\nERROR: ended at %d != tail(%d)\n", prev, cache.info.tail);
     } else {
-        fprintf(stderr, "\nDUMP END ==\n");
+        // fprintf(stderr, "\nDUMP END ==\n");
     }
 
 }
@@ -314,13 +312,13 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
         selectedBlock = cache.address<node_t>(found);
         node_t& node = *selectedBlock;
         if(node.blocks > blocksRequired) { // free extra blocks
-            uint32_t& lastBlk = cache.next(node, blocksRequired);
+            uint32_t& lastBlk = cache.next(found, blocksRequired);
             // drop remaining blocks
             cache.release(lastBlk);
             // fprintf(stderr, "freeing %d blocks (%d used)\n", node.blocks - blocksRequired, cache.info.blocks_used);
             lastBlk = 0;
         } else if(node.blocks < blocksRequired) {
-            cache.next(node, node.blocks) = cache.allocate(blocksRequired - node.blocks);
+            cache.next(found, node.blocks) = cache.allocate(blocksRequired - node.blocks);
         }
         node.blocks = blocksRequired;
     } else { // insert

@@ -15,7 +15,7 @@ try {
 }
 */
 
-var obj = new binding.Cache("test2", 514<<10, 6);
+var obj = new binding.Cache("test2", 512<<10, 6);
 obj.foo = "bar";
 
 assert.strictEqual(obj.foo, "bar");
@@ -29,10 +29,6 @@ obj.env = 0;
 obj.env = [process.env, process.env];
 
 assert.deepEqual(Object.keys(obj).slice(-2), ['foo', 'env']);
-
-for(var k in obj) {
-    console.log(k, obj[k]);
-}
 
 var test = [process.env, process.env];
 
@@ -49,7 +45,7 @@ assert.strictEqual(obj.foo, undefined);
 
 
 console.time('LRU cache replacement');
-for(var i = 0; i < 64; i++) {
+for(var i = 0; i < 4097; i++) {
     obj['test' + i] = i;
     assert.strictEqual(obj['test' + i] , i);
 }

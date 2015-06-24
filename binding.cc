@@ -32,7 +32,7 @@ static NAN_METHOD(create) {
 
     uint32_t size = args[1]->Uint32Value();
     uint32_t block_size_shift = args[2]->Uint32Value();
-    if(!block_size_shift || block_size_shift > ) block_size_shift = 6;
+    if(!block_size_shift || block_size_shift > 31) block_size_shift = 6;
 
     uint32_t blocks = size >> (5 + block_size_shift) << 5; // 32 aligned
     size = blocks << block_size_shift;
@@ -64,9 +64,9 @@ static NAN_METHOD(create) {
 
 #define PROPERTY_SCOPE(ptr, keyLen, keyBuf) size_t keyLen = property->Length();\
     void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);\
-    // if(0) {\
-    //     return NanThrowError("length of property name should not be greater than (block size - 32) / 2");\
-    // }\
+    if(0) {\
+        return NanThrowError("length of property name should not be greater than (block size - 32) / 2");\
+    }\
     uint16_t keyBuf[256];\
     property->Write(keyBuf);\
 
