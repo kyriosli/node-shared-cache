@@ -289,7 +289,7 @@ void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t
 
 int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
-    size_t totalLen = (keyLen << 1) + valLen + sizeof(node_s) - 1;
+    size_t totalLen = (keyLen << 1) + valLen + sizeof(node_s);
     const uint32_t BLK_SIZE = 1 << cache.info.block_size_shift;
     uint32_t blocksRequired = totalLen / BLK_SIZE + (totalLen % BLK_SIZE ? 1 : 0);
     // fprintf(stderr, "cache::set: total len %d (%d blocks required)\n", totalLen, blocksRequired);
@@ -314,38 +314,38 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
         selectedBlock = cache.address<node_t>(found);
         node_t& node = *selectedBlock;
         if(node.blocks > blocksRequired) { // free extra blocks
-            uint32_t& slave_next = cache.next(node, blocksRequired);
+            uint32_t& lastBlk = cache.next(node, blocksRequired);
             // drop remaining blocks
-            cache.release(slave_next);
+            cache.release(lastBlk);
             // fprintf(stderr, "freeing %d blocks (%d used)\n", node.blocks - blocksRequired, cache.info.blocks_used);
-            slave_next = 0;
+            lastBlk = 0;
         } else if(node.blocks < blocksRequired) {
             cache.next(node, node.blocks) = cache.allocate(blocksRequired - node.blocks);
         }
         node.blocks = blocksRequired;
     } else { // insert
         // insert into hash table
-        uint32_t first_block = cache.allocate(blocksRequired);
-        // fprintf(stderr, "cache::set allocated new block %d\n", first_block);
-        selectedBlock = cache.address<node_t>(first_block);
+        found = cache.allocate(blocksRequired);
+        // fprintf(stderr, "cache::set allocated new block %d\n", found);
+        selectedBlock = cache.address<node_t>(found);
         node_t& node = *selectedBlock;
         node.blocks = blocksRequired;
 
         node.hash = hash;
         uint32_t& hash_head = cache.hashmap[hash & 0xffff];
         node.hash_next = hash_head; // insert into linked list
-        hash_head = first_block;
+        hash_head = found;
         node.keyLen = keyLen;
 
-        // fprintf(stderr, "offering block %d to list\n", first_block);
+        // fprintf(stderr, "offering block %d to list\n", found);
         if(!cache.info.tail) {
-            cache.info.head = cache.info.tail = first_block;
+            cache.info.head = cache.info.tail = found;
             node.prev = node.next = 0;
         } else {
-            cache.address<node_t>(cache.info.tail)->next = first_block;
+            cache.address<node_t>(cache.info.tail)->next = found;
             node.prev = cache.info.tail;
             node.next = 0;
-            cache.info.tail = first_block;
+            cache.info.tail = found;
         }
         // copy key
         // fprintf(stderr, "copying key (len:%d capacity:%d)\n", keyLen, BLK_SIZE - sizeof(node_t));
@@ -353,32 +353,21 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
     }
     selectedBlock->valLen = valLen;
 
-    // keyLen <= 256 < capacity
-    // while(capacity < keyLen) {
-    //     if(!found) memcpy(reinterpret_cast<uint8_t*>(currentBlock) + offset, key, capacity << 1);
-    //     key += capacity;
-    //     keyLen -= capacity;
-    //     currentBlock = cache.address<node_slave_t>(currentBlock->slave_next);
-    //     offset = sizeof(node_slave_t);
-    //     capacity = (BLK_SIZE - sizeof(node_slave_t)) >> 1;
-    // }
-    // if(keyLen) { // capacity >= keyLen
-    // }
-
     // copy values
 
-    node_slave_t* currentBlock = reinterpret_cast<node_slave_t*>(selectedBlock);
+    uint8_t* currentBlock = reinterpret_cast<uint8_t*>(selectedBlock);
     uint32_t offset = sizeof(node_t) + (keyLen << 1);
     uint32_t capacity = BLK_SIZE - offset;
 
     while(capacity < valLen) {
-        // fprintf(stderr, "copying val (%x+%d) %d bytes. next=%d\n", currentBlock, offset, capacity, currentBlock->slave_next);
+        // fprintf(stderr, "copying val (%x+%d) %d bytes. next=%d\n", currentBlock, offset, capacity, cache.nexts[found]);
         memcpy(reinterpret_cast<uint8_t*>(currentBlock) + offset, val, capacity);
         val += capacity;
         valLen -= capacity;
-        currentBlock = cache.address<node_slave_t>(currentBlock->slave_next);
-        offset = sizeof(node_slave_t);
-        capacity = BLK_SIZE - sizeof(node_slave_t);
+        found = cache.nexts[found];
+        currentBlock = cache.address<uint8_t>(found);
+        offset = 0;
+        capacity = BLK_SIZE;
     }
 
     if(valLen) { // capacity >= valLen

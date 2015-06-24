@@ -64,9 +64,9 @@ static NAN_METHOD(create) {
 
 #define PROPERTY_SCOPE(ptr, keyLen, keyBuf) size_t keyLen = property->Length();\
     void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);\
-    if(keyLen > (1 << (*reinterpret_cast<uint16_t*>(ptr) - 1)) - 16) {\
-        return NanThrowError("length of property name should not be greater than (block size - 32) / 2");\
-    }\
+    // if(0) {\
+    //     return NanThrowError("length of property name should not be greater than (block size - 32) / 2");\
+    // }\
     uint16_t keyBuf[256];\
     property->Write(keyBuf);\
 
