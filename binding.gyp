@@ -10,11 +10,6 @@
       "include_dirs": [
         "<!(node -e \"require('nan')\")"
       ],
-      "link_settings": {
-        "libraries": [
-          "-lrt"
-        ]
-      },
       "conditions": [
         [
           "OS==\"linux\"",
