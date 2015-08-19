@@ -150,10 +150,10 @@ typedef struct writer_s {
 } writer_t;
 
 bson::BSONValue::BSONValue(v8::Handle<v8::Value> value) {
-    NanScope();
+    
     writer_t writer(*this);
     writer.write(value);
-    // fprintf(stderr, "%d bytes used writing %s\n", writer.used, *NanUtf8String(value));
+    // fprintf(stderr, "%d bytes used writing %s\n", writer.used, *Nan::Utf8String(value));
 
     pointer = writer.current - writer.used;
     length = writer.used;
@@ -166,37 +166,41 @@ bson::BSONValue::~BSONValue() {
     }    
 }
 
-static v8::Handle<v8::Value> parse(const uint8_t*& data, object_wrapper_t*& objects) {
+static v8::Local<v8::Value> parse(const uint8_t*& data, object_wrapper_t*& objects) {
     using namespace v8;
     uint32_t len;
     const uint8_t* tmp;
     switch(*(data++)) {
     case bson::Null:
-        return NanNull();
+        return Nan::Null();
     case bson::Undefined:
-        return NanUndefined();
+        return Nan::Undefined();
     case bson::True:
-        return NanTrue();
+        return Nan::True();
     case bson::False:
-        return NanFalse();
+        return Nan::False();
     case bson::Int32:
         tmp = data;
         data += sizeof(int32_t);
-        return NanNew<Integer>(*reinterpret_cast<const int32_t*>(tmp));
+        return Nan::New<Integer>(*reinterpret_cast<const int32_t*>(tmp));
     case bson::Number:
         tmp = data;
         data += sizeof(double);
-        return NanNew<Number>(*reinterpret_cast<const double*>(tmp));
+        return Nan::New<Number>(*reinterpret_cast<const double*>(tmp));
     case bson::String:
         len = *reinterpret_cast<const uint32_t*>(data);
         tmp = data += sizeof(uint32_t);
         data += len;
-        return NanNew<String>(reinterpret_cast<const uint16_t*>(tmp), len >> 1);
+#if (NODE_MODULE_VERSION > NODE_0_10_MODULE_VERSION)
+        return v8::String::NewFromTwoByte(Isolate::GetCurrent(), reinterpret_cast<const uint16_t*>(tmp), v8::String::kNormalString, len >> 1);
+#else
+        return v8::String::New(reinterpret_cast<const uint16_t*>(tmp), len >> 1);
+#endif
     case bson::Array:
         len = *reinterpret_cast<const uint32_t*>(data);
         data += sizeof(uint32_t);
         {
-            Local<Array> arr = NanNew<Array>(len);
+            Local<Array> arr = Nan::New<Array>(len);
             objects = new object_wrapper_t(arr, objects);
 
             for(uint32_t i = 0; i < len; i++) {
@@ -208,7 +212,7 @@ static v8::Handle<v8::Value> parse(const uint8_t*& data, object_wrapper_t*& obje
         len = *reinterpret_cast<const uint32_t*>(data);
         data += sizeof(uint32_t);
         {
-            Local<Object> obj = NanNew<Object>();
+            Local<Object> obj = Nan::New<Object>();
             objects = new object_wrapper_t(obj, objects);
 
             for(uint32_t i = 0; i < len; i++) {
@@ -231,9 +235,9 @@ static v8::Handle<v8::Value> parse(const uint8_t*& data, object_wrapper_t*& obje
 
 }
 
-v8::Handle<v8::Value> bson::parse(const uint8_t* data) {
+v8::Local<v8::Value> bson::parse(const uint8_t* data) {
     object_wrapper_t* objects = NULL;
-    v8::Handle<v8::Value> ret = ::parse(data, objects);
+    v8::Local<v8::Value> ret = ::parse(data, objects);
     while(objects) {
         object_wrapper_t* next = objects->next;
         delete objects;

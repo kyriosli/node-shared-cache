@@ -9,12 +9,6 @@
 #include "memcache.h"
 #include "bson.h"
 
-#if (NODE_MODULE_VERSION > NODE_0_10_MODULE_VERSION)
-#define NanReturnEmpty(TYPE)    return
-#else
-#define NanReturnEmpty(TYPE)    return Handle<TYPE>()
-#endif
-
 #define CACHE_HEADER_IN_WORDS   131078
 
 using namespace v8;
@@ -22,36 +16,34 @@ using namespace v8;
 #define FATALIF(expr, n, method)    if((expr) == n) {\
     char sbuf[64];\
     sprintf(sbuf, "%s failed with code %d at " __FILE__ ":%d", #method, errno, __LINE__);\
-    return NanThrowError(sbuf);\
+    return Nan::ThrowError(sbuf);\
 }
 
 static NAN_METHOD(create) {
-    if(!args.IsConstructCall()) {
-        return NanThrowError("Illegal constructor");
+    if(!info.IsConstructCall()) {
+        return Nan::ThrowError("Illegal constructor");
     }
 
-    NanScope();
-
-    uint32_t size = args[1]->Uint32Value();
-    uint32_t block_size_shift = args[2]->Uint32Value();
+    uint32_t size = info[1]->Uint32Value();
+    uint32_t block_size_shift = info[2]->Uint32Value();
     if(!block_size_shift || block_size_shift > 31) block_size_shift = 6;
 
     uint32_t blocks = size >> (5 + block_size_shift) << 5; // 32 aligned
     size = blocks << block_size_shift;
 
     if(block_size_shift < 6) {
-        return NanThrowError("block size should not be smaller than 64 bytes");
+        return Nan::ThrowError("block size should not be smaller than 64 bytes");
     } else if(block_size_shift > 14) {
-        return NanThrowError("block size should not be larger than 16 KB");
+        return Nan::ThrowError("block size should not be larger than 16 KB");
     }else if(size < 524288) {
-        return NanThrowError("total_size should be larger than 512 KB");
+        return Nan::ThrowError("total_size should be larger than 512 KB");
     }
 
     // fprintf(stderr, "allocating %d bytes memory\n", len);
 
     int fd;
 
-    FATALIF(fd = shm_open(*NanUtf8String(args[0]), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR), -1, shm_open);
+    FATALIF(fd = shm_open(*Nan::Utf8String(info[0]), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR), -1, shm_open);
     FATALIF(ftruncate(fd, size), -1, ftruncate);
 
     void* ptr;
@@ -60,24 +52,22 @@ static NAN_METHOD(create) {
 
     cache::init(ptr, blocks, block_size_shift);
 
-    NanSetInternalFieldPointer(args.Holder(), 0, ptr);
-    NanReturnUndefined();
+    Nan::SetInternalFieldPointer(info.Holder(), 0, ptr);
 }
 
 #define PROPERTY_SCOPE(ptr, keyLen, keyBuf) size_t keyLen = property->Length();\
     if(keyLen > 256) {\
-        return NanThrowError("length of property name should not be greater than 256");\
+        return Nan::ThrowError("length of property name should not be greater than 256");\
     }\
-    void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);\
+    void* ptr = Nan::GetInternalFieldPointer(info.Holder(), 0);\
     if((keyLen << 1) + 32 > 1 << static_cast<uint16_t*>(ptr)[CACHE_HEADER_IN_WORDS]) {\
-        return NanThrowError("length of property name should not be greater than (block size - 32) / 2");\
+        return Nan::ThrowError("length of property name should not be greater than (block size - 32) / 2");\
     }\
     uint16_t keyBuf[256];\
     property->Write(keyBuf);\
 
 
 static NAN_PROPERTY_GETTER(getter) {
-    NanScope();
     PROPERTY_SCOPE(ptr, keyLen, keyBuf);
     
     uint8_t tmp[1024];
@@ -87,26 +77,22 @@ static NAN_PROPERTY_GETTER(getter) {
 
     cache::get(ptr, keyBuf, keyLen, val, valLen);
 
-    if(val) {
-        // TODO bson decode
-        Handle<Value> ret = bson::parse(val);
-        if(valLen > sizeof(tmp)) {
-            delete[] val;
-        }
-        NanReturnValue(ret);
-    } else {
-        NanReturnUndefined();
+    if(!val) return; // not found, returns undefined
+    Local<Value> ret = bson::parse(val);
+
+    if(valLen > sizeof(tmp)) {
+        delete[] val;
     }
+    info.GetReturnValue().Set(ret);
 }
 
 static NAN_PROPERTY_SETTER(setter) {
-    NanScope();
     PROPERTY_SCOPE(ptr, keyLen, keyBuf);
 
     bson::BSONValue bsonValue(value);
 
     FATALIF(cache::set(ptr, keyBuf, keyLen, bsonValue.Data(), bsonValue.Length()), -1, cache::set);
-    NanReturnValue(value);
+    info.GetReturnValue().Set(value);
 }
 
 class KeysEnumerator {
@@ -116,69 +102,66 @@ public:
 
     static void next(void* enumerator, uint16_t* key, size_t keyLen) {
         KeysEnumerator* self = static_cast<KeysEnumerator*>(enumerator);
-        self->keys->Set(self->length++, NanNew<String>(key, keyLen));
+#if (NODE_MODULE_VERSION > NODE_0_10_MODULE_VERSION)
+        self->keys->Set(self->length++, v8::String::NewFromTwoByte(Isolate::GetCurrent(), key, v8::String::kNormalString, keyLen));
+#else
+        self->keys->Set(self->length++, v8::String::New(key, keyLen));
+#endif
     }
 
-    inline KeysEnumerator() : length(0), keys(NanNew<Array>()) {}
+    inline KeysEnumerator() : length(0), keys(Nan::New<Array>()) {}
 };
 
 static NAN_PROPERTY_ENUMERATOR(enumerator) {
-    NanScope();
-    void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
+    void* ptr = Nan::GetInternalFieldPointer(info.Holder(), 0);
     // fprintf(stderr, "enumerating properties %x\n", ptr);
 
     KeysEnumerator enumerator;
     cache::enumerate(ptr, &enumerator, KeysEnumerator::next);
 
-    NanReturnValue(enumerator.keys);
+    info.GetReturnValue().Set(enumerator.keys);
 }
 
 static NAN_PROPERTY_DELETER(deleter) {
-    NanScope();
     size_t keyLen = property->Length();
     if(keyLen > 256) {
-        NanThrowError("length of property name should not be greater than 256");
-        NanReturnEmpty(Boolean);
+        return Nan::ThrowError("length of property name should not be greater than 256");
     }
-    void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
+    void* ptr = Nan::GetInternalFieldPointer(info.Holder(), 0);
     if((keyLen << 1) + 32 > 1 << static_cast<uint16_t*>(ptr)[CACHE_HEADER_IN_WORDS]) {
-        NanThrowError("length of property name should not be greater than (block size - 32) / 2");
-        NanReturnEmpty(Boolean);
+        return Nan::ThrowError("length of property name should not be greater than (block size - 32) / 2");
     }
     uint16_t keyBuf[256];
     property->Write(keyBuf);
 
 
-    NanReturnValue(cache::unset(ptr, keyBuf, keyLen) ? NanTrue() : NanFalse());
+    info.GetReturnValue().Set(cache::unset(ptr, keyBuf, keyLen));
 }
 
 static NAN_PROPERTY_QUERY(querier) {
-    NanScope();
     size_t keyLen = property->Length();
     if(keyLen > 256) {
-        NanThrowError("length of property name should not be greater than 256");
-        NanReturnEmpty(Integer);
+        return Nan::ThrowError("length of property name should not be greater than 256");
     }
-    void* ptr = NanGetInternalFieldPointer(args.Holder(), 0);
+    void* ptr = Nan::GetInternalFieldPointer(info.Holder(), 0);
     if((keyLen << 1) + 32 > 1 << static_cast<uint16_t*>(ptr)[CACHE_HEADER_IN_WORDS]) {
-        NanThrowError("length of property name should not be greater than (block size - 32) / 2");
-        NanReturnEmpty(Integer);
+        return Nan::ThrowError("length of property name should not be greater than (block size - 32) / 2");
     }
     uint16_t keyBuf[256];
     property->Write(keyBuf);
-
-    NanReturnValue(cache::contains(ptr, keyBuf, keyLen) ? NanNew<Integer>(0) : Handle<Integer>());
+    if(cache::contains(ptr, keyBuf, keyLen)) {
+        info.GetReturnValue().Set(0);
+    }
 }
 
 void init(Handle<Object> exports) {
-    NanScope();
 
-    Local<FunctionTemplate> constructor = NanNew<FunctionTemplate>(create);
+    Local<FunctionTemplate> constructor = Nan::New<FunctionTemplate>(create);
     Local<ObjectTemplate> inst = constructor->InstanceTemplate();
     inst->SetInternalFieldCount(1); // ptr
-    inst->SetNamedPropertyHandler(getter, setter, querier, deleter, enumerator);
+    Nan::SetNamedPropertyHandler(inst, getter, setter, querier, deleter, enumerator);
     
-    exports->Set(NanNew<String>("Cache"), constructor->GetFunction());
+    Nan::Set(exports, Nan::New("Cache").ToLocalChecked(), constructor->GetFunction());
 }
 
 
