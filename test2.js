@@ -1,6 +1,6 @@
 var assert = require('assert');
 
-var binding = require('./build/Release/binding.node');
+var binding = require('./index.js');
 /*
 try {
     var obj = new binding.Cache("test", 525312);
@@ -15,7 +15,7 @@ try {
 }
 */
 
-var obj = new binding.Cache("test2", 512<<10, 6);
+var obj = new binding.Cache("test2", 512<<10, binding.SIZE_64);
 
 
 obj.foo = "bar";

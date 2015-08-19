@@ -1,4 +1,4 @@
-var binding = require('./build/Release/binding.node');
+var binding = require('./index.js');
 
 // test plain object
 var plain = {};

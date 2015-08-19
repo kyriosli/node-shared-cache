@@ -14,7 +14,19 @@
         "libraries": [
           "-lrt"
         ]
-      }
+      },
+      "conditions": [
+        [
+          "OS==\"linux\"",
+          {
+            "link_settings": {
+              "libraries": [
+                "-lrt"
+              ]
+            }
+          }
+        ]
+      ]
     }
   ]
 }

@@ -1,4 +1,4 @@
-exports = module.exports = require('./build/Release/binding.node');
+process.dlopen(module, require.resolve('./build/Release/binding.node'));
 
 exports.SIZE_DEFAULT = 6;
 exports.SIZE_64 = 6;
