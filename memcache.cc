@@ -29,7 +29,7 @@ typedef struct write_lock_s {
         LOCK(fd, LOCK_UN);
     }
 } write_lock_t;
-#undef
+#undef LOCK
 
 typedef struct node_s {
     uint32_t    prev;
