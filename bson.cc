@@ -232,7 +232,8 @@ static v8::Local<v8::Value> parse(const uint8_t*& data, object_wrapper_t*& objec
             return curr->object;
         }
     }
-
+    assert("should not reach here");
+    return Local<Value>();
 }
 
 v8::Local<v8::Value> bson::parse(const uint8_t* data) {

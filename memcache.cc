@@ -86,7 +86,7 @@ typedef struct cache_s {
     }
 
     inline void format() {
-        fprintf(stderr, "format %x\n", this);
+        // fprintf(stderr, "format %x\n", this);
         // clear bitmap and hashmap
         memset(hashmap, 0, sizeof(hashmap));
         
@@ -278,64 +278,53 @@ void get(void* ptr, int fd, const uint16_t* key, size_t keyLen, uint8_t*& retval
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
     uint32_t hash = hashsum(key, keyLen);
-    {
-        read_lock_t lock(fd);
-        if(cache.info.dirty) {
-            retval = NULL;
-            return;
-        }
-
-        uint32_t found = cache.find(key, keyLen, hash);
-        // fprintf(stderr, "cache::get hash=%d found=%d\n", hash, found);
-        if(!found) {
-            retval = NULL;
-            return;
-        }
-        // found, read it out
-        node_t* pnode = cache.address<node_t>(found);
-        size_t valLen = pnode->valLen;
-        uint8_t* val;
-
-        if(valLen > retvalLen) {
-            val = retval = new uint8_t[valLen];
-        } else {
-            val = retval;
-        }
-        retvalLen = valLen;
-
-        uint8_t* currentBlock = reinterpret_cast<uint8_t*>(pnode);
-        uint32_t offset = sizeof(node_t) + (keyLen << 1);
-        const uint32_t BLK_SIZE = 1 << cache.info.block_size_shift;
-        uint32_t capacity = BLK_SIZE - offset;
-
-        while(capacity < valLen) {
-            // fprintf(stderr, "copying val (%x+%d) %d bytes\n", currentBlock, offset, capacity);
-            memcpy(val, currentBlock + offset, BLK_SIZE - offset);
-            val += capacity;
-            valLen -= capacity;
-            found = cache.nexts[found];
-            currentBlock = cache.address<uint8_t>(found);
-            offset = 0;
-            capacity = BLK_SIZE;
-        }
-        if(valLen) { // capacity >= valLen
-            // fprintf(stderr, "copying remaining val (%x+%d) %d bytes\n", currentBlock, offset, valLen);
-            memcpy(val, reinterpret_cast<uint8_t*>(currentBlock) + offset, valLen);
-        }
+    write_lock_t lock(fd);
+    if(cache.info.dirty) {
+        retval = NULL;
+        return;
     }
 
-    {// read complete, update it
-        write_lock_t lock(fd);
-        if(cache.info.dirty) { // oops something bad happened
-            return;
-        }
+    uint32_t found = cache.find(key, keyLen, hash);
+    // fprintf(stderr, "cache::get hash=%d found=%d\n", hash, found);
+    if(!found) {
+        retval = NULL;
+        return;
+    }
 
-        uint32_t found = cache.find(key, keyLen, hash);
-        if(found) {
-            cache.info.dirty = 1;
-            cache.touch(found);
-            cache.info.dirty = 0;
-        }
+    cache.info.dirty = 1;
+    cache.touch(found);
+    cache.info.dirty = 0;
+
+    // found, read it out
+    node_t* pnode = cache.address<node_t>(found);
+    size_t valLen = pnode->valLen;
+    uint8_t* val;
+
+    if(valLen > retvalLen) {
+        val = retval = new uint8_t[valLen];
+    } else {
+        val = retval;
+    }
+    retvalLen = valLen;
+
+    uint8_t* currentBlock = reinterpret_cast<uint8_t*>(pnode);
+    uint32_t offset = sizeof(node_t) + (keyLen << 1);
+    const uint32_t BLK_SIZE = 1 << cache.info.block_size_shift;
+    uint32_t capacity = BLK_SIZE - offset;
+
+    while(capacity < valLen) {
+        // fprintf(stderr, "copying val (%x+%d) %d bytes\n", currentBlock, offset, capacity);
+        memcpy(val, currentBlock + offset, BLK_SIZE - offset);
+        val += capacity;
+        valLen -= capacity;
+        found = cache.nexts[found];
+        currentBlock = cache.address<uint8_t>(found);
+        offset = 0;
+        capacity = BLK_SIZE;
+    }
+    if(valLen) { // capacity >= valLen
+        // fprintf(stderr, "copying remaining val (%x+%d) %d bytes\n", currentBlock, offset, valLen);
+        memcpy(val, reinterpret_cast<uint8_t*>(currentBlock) + offset, valLen);
     }
     // dump(cache);
 }

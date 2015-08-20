@@ -67,7 +67,7 @@ static NAN_METHOD(create) {
 
 }
 
-#define PROPERTY_SCOPE(property, info, ptr, fd, keyLen, keyBuf) size_t keyLen = property->Length();\
+#define PROPERTY_SCOPE(property, info, ptr, fd, keyLen, keyBuf) int keyLen = property->Length();\
     if(keyLen > 256) {\
         return Nan::ThrowError("length of property name should not be greater than 256");\
     }\
