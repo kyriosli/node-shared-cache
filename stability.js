@@ -1,23 +1,24 @@
 var cp = require('child_process');
 
 if(process.argv[2] !== 'worker') {
-	var workers = [];
+	var workers = [], spawned = 0;
 	for(var i = 0; i < 10; i++) {
+		spawned++;
 		var worker = workers[i] = cp.spawn(process.execPath, [__filename, 'worker'], {stdio: 'inherit'});
-		console.log('spawn child ', i, worker.pid);
 	}
 	process.on('SIGINT', function () {
 		for(var i = 0; i < 10; i++) {
 			workers[i].kill('SIGINT');
 		}
 		clearInterval(pid);
+		console.log(spawned + ' children spawned');
 	});
 
 	var pid = setInterval(function() {
 		var i = Math.random() * 10 | 0;
 		workers[i].kill('SIGKILL');
+		spawned++;
 		var worker = workers[i] = cp.spawn(process.execPath, [__filename, 'worker'], {stdio: 'inherit'});
-        console.log('spawn child ', i, worker.pid);
 	}, 100);
 
 	return;
@@ -35,7 +36,7 @@ process.on('SIGINT', function () {
 
 function sched() {
 	n++;
-	for(var i = 0; i < 100; i++) {
+	for(var i = 0; i < 1000; i++) {
 		switch(Math.random() * 10 | 0) {
 			case 0: obj.foo = !obj.foo; break;
 			case 1: obj.foo = Date.now() + Math.random(); break;
