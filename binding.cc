@@ -19,6 +19,10 @@ using namespace v8;
     return Nan::ThrowError(sbuf);\
 }
 
+static NAN_METHOD(release) {
+    FATALIF(shm_unlink(*String::Utf8Value(info[0])), -1, shm_unlink);
+}
+
 static NAN_METHOD(create) {
     if(!info.IsConstructCall()) {
         return Nan::ThrowError("Illegal constructor");
@@ -157,6 +161,7 @@ void init(Handle<Object> exports) {
     Nan::SetNamedPropertyHandler(inst, getter, setter, querier, deleter, enumerator);
     
     Nan::Set(exports, Nan::New("Cache").ToLocalChecked(), constructor->GetFunction());
+    Nan::SetMethod(exports, "release", release);
 }
 
 
