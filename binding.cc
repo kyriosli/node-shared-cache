@@ -60,7 +60,7 @@ static NAN_METHOD(create) {
 
     if(cache::init(ptr, blocks, block_size_shift, stat.st_size == 0)) {
         Nan::SetInternalFieldPointer(info.Holder(), 0, ptr);
-		info.Holder()->SetInternalField(1, Nan::New(fd));
+        info.Holder()->SetInternalField(1, Nan::New(fd));
     } else {
         Nan::ThrowError("cache initialization failed, maybe it has been initialized with different block size");
     }
@@ -77,7 +77,7 @@ static NAN_METHOD(create) {
     }\
     uint16_t keyBuf[256];\
     property->Write(keyBuf);\
-	int fd = info.Holder()->GetInternalField(1)->Int32Value();
+    int fd = info.Holder()->GetInternalField(1)->Int32Value();
 
 
 static NAN_PROPERTY_GETTER(getter) {
@@ -127,7 +127,7 @@ public:
 
 static NAN_PROPERTY_ENUMERATOR(enumerator) {
     void* ptr = Nan::GetInternalFieldPointer(info.Holder(), 0);
-	int fd = info.Holder()->GetInternalField(1)->Int32Value();
+    int fd = info.Holder()->GetInternalField(1)->Int32Value();
     // fprintf(stderr, "enumerating properties %x\n", ptr);
 
     KeysEnumerator enumerator;
