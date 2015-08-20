@@ -10,7 +10,15 @@ if(process.argv[2] !== 'worker') {
 		for(var i = 0; i < 10; i++) {
 			workers[i].kill('SIGINT');
 		}
+		clearInterval(pid);
 	});
+
+	var pid = setInterval(function() {
+		var i = Math.random() * 10 | 0;
+		workers[i].kill('SIGKILL');
+		var worker = workers[i] = cp.spawn(process.execPath, [__filename, 'worker'], {stdio: 'inherit'});
+        console.log('spawn child ', i, worker.pid);
+	}, 100);
 
 	return;
 }

@@ -1,12 +1,33 @@
 #include<stdio.h>
-#include<string.h>
-#include<errno.h>
-#include "lock.h"
+#include<string.h> // memset
+#include<errno.h> // errno
+#include <sys/file.h> // flock
+#include <stdint.h> // uint32_t
 #include "memcache.h"
 
 #define MAGIC 0xdeadbeef
 
 namespace cache {
+
+typedef struct read_lock_s {
+	int fd;
+	inline read_lock_s(int fd) : fd(fd) {
+		flock(fd, LOCK_SH);
+	}
+	inline ~read_lock_s() {
+		flock(fd, LOCK_UN);
+	}
+} read_lock_t;
+
+typedef struct write_lock_s {
+	int fd;
+	inline write_lock_s(int fd) : fd(fd) {
+		flock(fd, LOCK_EX);
+	}
+	inline ~write_lock_s() {
+		flock(fd, LOCK_UN);
+	}
+} write_lock_t;
 
 typedef struct node_s {
     uint32_t    prev;
@@ -63,6 +84,7 @@ typedef struct cache_s {
     }
 
     inline void format() {
+		fprintf(stderr, "format %x\n", this);
         // clear bitmap and hashmap
         memset(hashmap, 0, sizeof(hashmap));
         
@@ -77,7 +99,7 @@ typedef struct cache_s {
 
         info.head = 0;
         info.tail = 0;
-        info.dirty = 0;
+        info.dirty = 0; // at last, set dirty to 0
     }
 
     inline uint32_t selectOne() {
@@ -210,8 +232,10 @@ bool init(void* ptr, uint32_t blocks, uint32_t block_size_shift, bool forced) {
     cache.info.first_block = first_block;
     cache.format();
     // fprintf(stderr, "init cache: size %d, blocks %d, usage %d/%d\n", blocks << block_size_shift, blocks, cache.info.blocks_used, cache.info.blocks_available);
+	return true;
 }
 
+#if(0)
 static void dump(cache_t& cache) {
     // fprintf(stderr, "== DUMP START: head: %d tail:%d", cache.info.head, cache.info.tail);
     uint32_t prev = 0;
@@ -236,6 +260,7 @@ static void dump(cache_t& cache) {
     }
 
 }
+#endif
 
 
 inline uint32_t hashsum(const uint16_t* key, size_t keyLen) {
@@ -246,11 +271,16 @@ inline uint32_t hashsum(const uint16_t* key, size_t keyLen) {
     return hash;
 }
 
-void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t& retvalLen) {
+void get(void* ptr, int fd, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t& retvalLen) {
     // fprintf(stderr, "cache::get: key len %d\n", keyLen);
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
     uint32_t hash = hashsum(key, keyLen);
+	read_lock_t lock(fd);
+	if(cache.info.dirty) {
+		retval = NULL;
+		return;
+	}
 
     uint32_t found = cache.find(key, keyLen, hash);
     // fprintf(stderr, "cache::get hash=%d found=%d\n", hash, found);
@@ -293,7 +323,7 @@ void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t
     // dump(cache);
 }
 
-int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen) {
+int set(void* ptr, int fd, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
     size_t totalLen = (keyLen << 1) + valLen + sizeof(node_s);
     const uint32_t BLK_SIZE = 1 << cache.info.block_size_shift;
@@ -308,10 +338,14 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
 
     uint32_t hash = hashsum(key, keyLen);
 
+	write_lock_t lock(fd);
+	if(cache.info.dirty) {
+		cache.format();
+	}
     // find if key is already exists
     uint32_t found = cache.find(key, keyLen, hash);
     node_t* selectedBlock;
-
+	cache.info.dirty = 1;
     // fprintf(stderr, "cache::set hash=%d found=%d\n", hash, found);
     if(found) { // update
         cache.touch(found);
@@ -378,12 +412,18 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
         // fprintf(stderr, "copying remaining val (%x+%d) %d bytes\n", currentBlock, offset, valLen);
         memcpy(reinterpret_cast<uint8_t*>(currentBlock) + offset, val, valLen);
     }
+	cache.info.dirty = 0;
     return 0;
 }
 
 
-void enumerate(void* ptr, void* enumerator, void(* callback)(void*,uint16_t*,size_t)) {
+void enumerate(void* ptr, int fd, void* enumerator, void(* callback)(void*,uint16_t*,size_t)) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
+
+	read_lock_t lock(fd);
+	if(cache.info.dirty) {
+		return;
+	}
     uint32_t curr = cache.info.head;
 
     while(curr) {
@@ -393,22 +433,33 @@ void enumerate(void* ptr, void* enumerator, void(* callback)(void*,uint16_t*,siz
     }
 }
 
-bool contains(void* ptr, const uint16_t* key, size_t keyLen) {
+bool contains(void* ptr, int fd, const uint16_t* key, size_t keyLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
     uint32_t hash = hashsum(key, keyLen);
 
+	read_lock_t lock(fd);
+	if(cache.info.dirty) {
+		return false;
+	}
     return cache.find(key, keyLen, hash);
 }
 
-bool unset(void* ptr, const uint16_t* key, size_t keyLen) {
+bool unset(void* ptr, int fd, const uint16_t* key, size_t keyLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
     uint32_t hash = hashsum(key, keyLen);
 
+	write_lock_t lock(fd);
+	if(cache.info.dirty) {
+		return false;
+	}
+
     uint32_t found = cache.find(key, keyLen, hash);
     if(found) {
+		cache.info.dirty = 1;
         cache.dropNode(found);
+		cache.info.dirty = 0;
     }
     return found;
 }

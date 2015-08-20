@@ -9,7 +9,7 @@
 #include "memcache.h"
 #include "bson.h"
 
-#define CACHE_HEADER_IN_WORDS   131078
+#define CACHE_HEADER_IN_WORDS   131080
 
 using namespace v8;
 
@@ -60,13 +60,14 @@ static NAN_METHOD(create) {
 
     if(cache::init(ptr, blocks, block_size_shift, stat.st_size == 0)) {
         Nan::SetInternalFieldPointer(info.Holder(), 0, ptr);
+		info.Holder()->SetInternalField(1, Nan::New(fd));
     } else {
         Nan::ThrowError("cache initialization failed, maybe it has been initialized with different block size");
     }
 
 }
 
-#define PROPERTY_SCOPE(ptr, keyLen, keyBuf) size_t keyLen = property->Length();\
+#define PROPERTY_SCOPE(property, info, ptr, fd, keyLen, keyBuf) size_t keyLen = property->Length();\
     if(keyLen > 256) {\
         return Nan::ThrowError("length of property name should not be greater than 256");\
     }\
@@ -76,17 +77,18 @@ static NAN_METHOD(create) {
     }\
     uint16_t keyBuf[256];\
     property->Write(keyBuf);\
+	int fd = info.Holder()->GetInternalField(1)->Int32Value();
 
 
 static NAN_PROPERTY_GETTER(getter) {
-    PROPERTY_SCOPE(ptr, keyLen, keyBuf);
+    PROPERTY_SCOPE(property, info, ptr, fd, keyLen, keyBuf);
     
     uint8_t tmp[1024];
 
     uint8_t* val = tmp;
     size_t valLen = sizeof(tmp);
 
-    cache::get(ptr, keyBuf, keyLen, val, valLen);
+    cache::get(ptr, fd, keyBuf, keyLen, val, valLen);
 
     if(!val) return; // not found, returns undefined
     Local<Value> ret = bson::parse(val);
@@ -98,11 +100,11 @@ static NAN_PROPERTY_GETTER(getter) {
 }
 
 static NAN_PROPERTY_SETTER(setter) {
-    PROPERTY_SCOPE(ptr, keyLen, keyBuf);
+    PROPERTY_SCOPE(property, info, ptr, fd, keyLen, keyBuf);
 
     bson::BSONValue bsonValue(value);
 
-    FATALIF(cache::set(ptr, keyBuf, keyLen, bsonValue.Data(), bsonValue.Length()), -1, cache::set);
+    FATALIF(cache::set(ptr, fd, keyBuf, keyLen, bsonValue.Data(), bsonValue.Length()), -1, cache::set);
     info.GetReturnValue().Set(value);
 }
 
@@ -125,42 +127,24 @@ public:
 
 static NAN_PROPERTY_ENUMERATOR(enumerator) {
     void* ptr = Nan::GetInternalFieldPointer(info.Holder(), 0);
+	int fd = info.Holder()->GetInternalField(1)->Int32Value();
     // fprintf(stderr, "enumerating properties %x\n", ptr);
 
     KeysEnumerator enumerator;
-    cache::enumerate(ptr, &enumerator, KeysEnumerator::next);
+    cache::enumerate(ptr, fd, &enumerator, KeysEnumerator::next);
 
     info.GetReturnValue().Set(enumerator.keys);
 }
 
 static NAN_PROPERTY_DELETER(deleter) {
-    size_t keyLen = property->Length();
-    if(keyLen > 256) {
-        return Nan::ThrowError("length of property name should not be greater than 256");
-    }
-    void* ptr = Nan::GetInternalFieldPointer(info.Holder(), 0);
-    if((keyLen << 1) + 32 > 1 << static_cast<uint16_t*>(ptr)[CACHE_HEADER_IN_WORDS]) {
-        return Nan::ThrowError("length of property name should not be greater than (block size - 32) / 2");
-    }
-    uint16_t keyBuf[256];
-    property->Write(keyBuf);
+    PROPERTY_SCOPE(property, info, ptr, fd, keyLen, keyBuf);
 
-
-    info.GetReturnValue().Set(cache::unset(ptr, keyBuf, keyLen));
+    info.GetReturnValue().Set(cache::unset(ptr, fd, keyBuf, keyLen));
 }
 
 static NAN_PROPERTY_QUERY(querier) {
-    size_t keyLen = property->Length();
-    if(keyLen > 256) {
-        return Nan::ThrowError("length of property name should not be greater than 256");
-    }
-    void* ptr = Nan::GetInternalFieldPointer(info.Holder(), 0);
-    if((keyLen << 1) + 32 > 1 << static_cast<uint16_t*>(ptr)[CACHE_HEADER_IN_WORDS]) {
-        return Nan::ThrowError("length of property name should not be greater than (block size - 32) / 2");
-    }
-    uint16_t keyBuf[256];
-    property->Write(keyBuf);
-    if(cache::contains(ptr, keyBuf, keyLen)) {
+    PROPERTY_SCOPE(property, info, ptr, fd, keyLen, keyBuf);
+    if(cache::contains(ptr, fd, keyBuf, keyLen)) {
         info.GetReturnValue().Set(0);
     }
 }
@@ -169,7 +153,7 @@ void init(Handle<Object> exports) {
 
     Local<FunctionTemplate> constructor = Nan::New<FunctionTemplate>(create);
     Local<ObjectTemplate> inst = constructor->InstanceTemplate();
-    inst->SetInternalFieldCount(1); // ptr
+    inst->SetInternalFieldCount(2); // ptr, fd
     Nan::SetNamedPropertyHandler(inst, getter, setter, querier, deleter, enumerator);
     
     Nan::Set(exports, Nan::New("Cache").ToLocalChecked(), constructor->GetFunction());
