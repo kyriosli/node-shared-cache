@@ -44,15 +44,26 @@ static NAN_METHOD(create) {
     int fd;
 
     FATALIF(fd = shm_open(*Nan::Utf8String(info[0]), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR), -1, shm_open);
-    FATALIF(ftruncate(fd, size), -1, ftruncate);
+    struct stat stat;
+    FATALIF(fstat(fd, &stat), -1, fstat);
+
+    if(stat.st_size == 0) {
+        FATALIF(ftruncate(fd, size), -1, ftruncate);        
+    } else if(stat.st_size != size) {
+        return Nan::ThrowError("cache initialized with different size");
+    }
+
 
     void* ptr;
 
     FATALIF(ptr = mmap(NULL, blocks << block_size_shift, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0), MAP_FAILED, mmap);
 
-    cache::init(ptr, blocks, block_size_shift);
+    if(cache::init(ptr, blocks, block_size_shift, stat.st_size == 0)) {
+        Nan::SetInternalFieldPointer(info.Holder(), 0, ptr);
+    } else {
+        Nan::ThrowError("cache initialization failed, maybe it has been initialized with different block size");
+    }
 
-    Nan::SetInternalFieldPointer(info.Holder(), 0, ptr);
 }
 
 #define PROPERTY_SCOPE(ptr, keyLen, keyBuf) size_t keyLen = property->Length();\

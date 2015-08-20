@@ -25,20 +25,19 @@ typedef struct cache_s {
     union {
         uint32_t nexts[0];
 
-        struct {
-            uint32_t    magic;
-            uint32_t    blocks_total;
-            uint32_t    blocks_available;
+        struct { // can be at most 32 dwords
+            uint32_t    magic; // 1
+            uint32_t    blocks_total; // 2
+            uint32_t    blocks_available; // 3
+            uint32_t    dirty; // 4
 
             uint16_t    block_size_shift;
-            uint16_t    first_block;
+            uint16_t    first_block; // 5
 
-            uint32_t    next_bitmap_index; // next bitmap position to look for when allocating block
-            uint32_t    blocks_used;
-            uint32_t    head;
-            uint32_t    tail;
-
-            rw_lock_t   lock;
+            uint32_t    next_bitmap_index; // 6 next bitmap position to look for when allocating block
+            uint32_t    blocks_used; // 7
+            uint32_t    head; // 8
+            uint32_t    tail; // 9
         } info;
 
     };
@@ -61,6 +60,24 @@ typedef struct cache_s {
         }
 
         return 0;
+    }
+
+    inline void format() {
+        // clear bitmap and hashmap
+        memset(hashmap, 0, sizeof(hashmap));
+        
+        info.blocks_used = 0;
+        info.next_bitmap_index = info.first_block >> 5;
+        // mark bits as used
+
+        if(info.first_block & 31) {
+            uint32_t mask = 0xffffffff << (info.first_block & 31);
+            nexts[info.blocks_total + info.next_bitmap_index] = ~mask;
+        }
+
+        info.head = 0;
+        info.tail = 0;
+        info.dirty = 0;
     }
 
     inline uint32_t selectOne() {
@@ -170,7 +187,7 @@ typedef struct cache_s {
     }
 } cache_t;
 
-void init(void* ptr, uint32_t blocks, uint32_t block_size_shift) {
+bool init(void* ptr, uint32_t blocks, uint32_t block_size_shift, bool forced) {
     uint32_t bitmap_size = blocks >> 3;
     uint32_t nexts_size = blocks << 2;
     uint32_t blocks_available = ((blocks << block_size_shift) - (HEADER_SIZE + bitmap_size + nexts_size)) >> block_size_shift;
@@ -178,35 +195,20 @@ void init(void* ptr, uint32_t blocks, uint32_t block_size_shift) {
 
     cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    if(cache.info.magic == MAGIC &&
-       cache.info.blocks_total == blocks &&
-       cache.info.blocks_available == blocks_available &&
-       cache.info.block_size_shift == block_size_shift &&
-       cache.info.first_block == first_block) { // already initialized
-        // fprintf(stderr, "init cache: already initialized\n");
-        return;
+    if(!forced && cache.info.magic == MAGIC) {
+        return cache.info.blocks_total == blocks &&
+           cache.info.blocks_available == blocks_available &&
+           cache.info.block_size_shift == block_size_shift &&
+           cache.info.first_block == first_block;
     }
-    memset(&cache, 0, sizeof(cache_t) + (blocks << 2) + (blocks >> 3));
-    // fprintf(stderr, "sizeof(cache_t):%d==262188 sizeof(cache.info):%d<64\n", sizeof(cache_t), sizeof(cache.info));
-
-    // Use forced write lock to prevent deadlock caused by a crashed thread
-    write_lock_t lock(cache.info.lock);
     
+    // initialize key words
     cache.info.magic = MAGIC;
     cache.info.blocks_total = blocks;
     cache.info.blocks_available = blocks_available;
     cache.info.block_size_shift = block_size_shift;
     cache.info.first_block = first_block;
-
-    cache.info.blocks_used = 0;
-    cache.info.next_bitmap_index = first_block >> 5;
-    // mark bits as used
-
-    uint32_t mask = 0;
-    for(uint32_t i = cache.info.next_bitmap_index << 5; i < first_block; i++) {
-        mask |= 1 << i;
-    }
-    cache.nexts[blocks + cache.info.next_bitmap_index] = mask;
+    cache.format();
     // fprintf(stderr, "init cache: size %d, blocks %d, usage %d/%d\n", blocks << block_size_shift, blocks, cache.info.blocks_used, cache.info.blocks_available);
 }
 
@@ -250,7 +252,6 @@ void get(void* ptr, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t
 
     uint32_t hash = hashsum(key, keyLen);
 
-    read_lock_t lock(cache.info.lock);
     uint32_t found = cache.find(key, keyLen, hash);
     // fprintf(stderr, "cache::get hash=%d found=%d\n", hash, found);
     if(found) {
@@ -306,8 +307,6 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
     }
 
     uint32_t hash = hashsum(key, keyLen);
-
-    write_lock_t lock(cache.info.lock);
 
     // find if key is already exists
     uint32_t found = cache.find(key, keyLen, hash);
@@ -385,7 +384,6 @@ int set(void* ptr, const uint16_t* key, size_t keyLen, const uint8_t* val, size_
 
 void enumerate(void* ptr, void* enumerator, void(* callback)(void*,uint16_t*,size_t)) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
-    read_lock_t lock(cache.info.lock);
     uint32_t curr = cache.info.head;
 
     while(curr) {
@@ -400,7 +398,6 @@ bool contains(void* ptr, const uint16_t* key, size_t keyLen) {
 
     uint32_t hash = hashsum(key, keyLen);
 
-    read_lock_t lock(cache.info.lock);
     return cache.find(key, keyLen, hash);
 }
 
@@ -409,7 +406,6 @@ bool unset(void* ptr, const uint16_t* key, size_t keyLen) {
 
     uint32_t hash = hashsum(key, keyLen);
 
-    write_lock_t lock(cache.info.lock);
     uint32_t found = cache.find(key, keyLen, hash);
     if(found) {
         cache.dropNode(found);

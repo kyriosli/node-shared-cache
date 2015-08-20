@@ -9,7 +9,7 @@ for(var i = 0; i < 1000000; i++) {
 console.timeEnd('plain obj');
 
 // test shared cache
-var obj = new binding.Cache("test", 1048576);
+var obj = new binding.Cache("benchmark", 1048576);
 console.time('shared cache');
 for(var i = 0; i < 1000000; i++) {
     obj['test' + (i & 127)] = i;
