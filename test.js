@@ -16,6 +16,7 @@ try {
 */
 
 var obj = new binding.Cache("test", 512<<10, binding.SIZE_1K);
+console.log('set obj.foo');
 obj.foo = "bar";
 
 assert.strictEqual(obj.foo, "bar");

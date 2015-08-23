@@ -43,11 +43,12 @@ static NAN_METHOD(create) {
         return Nan::ThrowError("total_size should be larger than 512 KB");
     }
 
-    // fprintf(stderr, "allocating %d bytes memory\n", len);
+    // fprintf(stderr, "allocating %d bytes memory\n", size);
 
     int fd;
+    Nan::Utf8String name(info[0]);
 
-    FATALIF(fd = shm_open(*Nan::Utf8String(info[0]), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR), -1, shm_open);
+    FATALIF(fd = shm_open(*name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR), -1, shm_open);
     struct stat stat;
     FATALIF(fstat(fd, &stat), -1, fstat);
 
@@ -64,6 +65,12 @@ static NAN_METHOD(create) {
 
     if(cache::init(ptr, blocks, block_size_shift, stat.st_size == 0)) {
         Nan::SetInternalFieldPointer(info.Holder(), 0, ptr);
+#ifdef __MACH__
+	char sbuf[64];
+	sprintf(sbuf, "/tmp/shared_cache_%s", *name);
+	fd = open(sbuf, O_CREAT | O_RDONLY);
+#endif
+
         info.Holder()->SetInternalField(1, Nan::New(fd));
     } else {
         Nan::ThrowError("cache initialization failed, maybe it has been initialized with different block size");
