@@ -1,4 +1,4 @@
-var binding = require('./index.js');
+var binding = require('../index.js');
 var obj = new binding.Cache("test", 512<<10, binding.SIZE_1K);
 
 var key = 'foo';

@@ -3,9 +3,9 @@
     {
       "target_name": "binding",
       "sources": [
-        "binding.cc",
-        "memcache.cc",
-        "bson.cc"
+        "src/binding.cc",
+        "src/memcache.cc",
+        "src/bson.cc"
       ],
       "include_dirs": [
         "<!(node -e \"require('nan')\")"

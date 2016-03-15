@@ -25,7 +25,7 @@ if(process.argv[2] !== 'worker') {
 }
 
 var n = 0, stopped = false;
-var binding = require('./index.js');
+var binding = require('../index.js');
 var obj = new binding.Cache("test", 512<<10, binding.SIZE_1K);
 
 
