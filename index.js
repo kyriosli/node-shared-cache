@@ -10,3 +10,7 @@ exports.SIZE_2K = 11;
 exports.SIZE_4K = 12;
 exports.SIZE_8K = 13;
 exports.SIZE_16K = 14;
+
+if(process.mainModule === module && process.argv[2] === 'release') {
+	process.argv.slice(3).forEach(exports.release);
+}

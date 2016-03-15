@@ -66,6 +66,9 @@ obj.foo = test;
 // and saved result is also circular
 test = obj.foo;
 test.self === test; // true
+// release memory region (don't call when cache is still used by some process, may cause memory leak)
+cache.release("test");
+
 ```
 
 ### class Cache

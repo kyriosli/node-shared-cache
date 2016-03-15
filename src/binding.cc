@@ -15,7 +15,7 @@ using namespace v8;
 
 #define FATALIF(expr, n, method)    if((expr) == n) {\
     char sbuf[64];\
-    sprintf(sbuf, "%s failed with code %d at " __FILE__ ":%d", #method, errno, __LINE__);\
+    sprintf(sbuf, __FILE__ ":%d: `%s' failed with code %d", __LINE__, #method, errno);\
     return Nan::ThrowError(sbuf);\
 }
 
