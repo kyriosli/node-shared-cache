@@ -66,8 +66,15 @@ obj.foo = test;
 // and saved result is also circular
 test = obj.foo;
 test.self === test; // true
-// release memory region (don't call when cache is still used by some process, may cause memory leak)
+// release memory region
 cache.release("test");
+// increase a key
+cache.increase(obj, "foo");
+cache.increase(obj, "foo", 3);
+// dump current cache
+var values = cache.dump(obj);
+// dump current cache by key prefix
+values = cache.dump(obj, "foo_");
 
 ```
 
@@ -102,6 +109,28 @@ So when block_size is set to default, the maximum memory size that can be used i
 #### property setter
 
     set(name, value)
+
+### exported methods
+
+#### release
+
+    function release(name)
+
+The shared memory named `name` will be released. Throws error if shared memory is not found. Note that this method simply calls `shm_unlink` and does not check whether the memory region is really initiated by this module.
+
+Don't call this method when the cache is still used by some process, may cause memory leak
+
+#### increase
+
+    function increase(cache, name, optional increase_by)
+
+Increase a key in the cache by an integer (default to 1). If the key is absent, or not an integer, the key will be set to `increase_by`.
+
+#### dump
+
+    function dump(cache, optional prefix)
+
+Dump keys and values 
 
 ## Performance
 

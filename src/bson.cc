@@ -3,21 +3,6 @@
 #include<nan.h>
 #include<string.h>
 
-namespace bson {
-    typedef enum {
-        Null,
-        Undefined,
-        True,
-        False,
-        Int32,
-        Number,
-        String,
-        Array,
-        Object,
-        ObjectRef
-    } TYPES;
-}
-
 typedef struct object_wrapper_s {
     v8::Handle<v8::Object> object;
     uint32_t index;

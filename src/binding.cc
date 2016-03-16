@@ -61,7 +61,7 @@ static NAN_METHOD(create) {
 
     void* ptr;
 
-    FATALIF(ptr = mmap(NULL, blocks << block_size_shift, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0), MAP_FAILED, mmap);
+    FATALIF(ptr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0), MAP_FAILED, mmap);
 
     if(cache::init(ptr, blocks, block_size_shift, stat.st_size == 0)) {
         Nan::SetInternalFieldPointer(info.Holder(), 0, ptr);
@@ -78,21 +78,23 @@ static NAN_METHOD(create) {
 
 }
 
-#define PROPERTY_SCOPE(property, info, ptr, fd, keyLen, keyBuf) int keyLen = property->Length();\
+#define METHOD_SCOPE(holder, ptr, fd) void* ptr = Nan::GetInternalFieldPointer(holder, 0);\
+    int fd = holder->GetInternalField(1)->Int32Value()
+
+#define PROPERTY_SCOPE(property, holder, ptr, fd, keyLen, keyBuf) int keyLen = property->Length();\
     if(keyLen > 256) {\
         return Nan::ThrowError("length of property name should not be greater than 256");\
     }\
-    void* ptr = Nan::GetInternalFieldPointer(info.Holder(), 0);\
+    METHOD_SCOPE(holder, ptr, fd);\
     if((keyLen << 1) + 32 > 1 << static_cast<uint16_t*>(ptr)[CACHE_HEADER_IN_WORDS]) {\
         return Nan::ThrowError("length of property name should not be greater than (block size - 32) / 2");\
     }\
     uint16_t keyBuf[256];\
-    property->Write(keyBuf);\
-    int fd = info.Holder()->GetInternalField(1)->Int32Value();
+    property->Write(keyBuf)
 
 
 static NAN_PROPERTY_GETTER(getter) {
-    PROPERTY_SCOPE(property, info, ptr, fd, keyLen, keyBuf);
+    PROPERTY_SCOPE(property, info.Holder(), ptr, fd, keyLen, keyBuf);
     
     uint8_t tmp[1024];
 
@@ -111,7 +113,7 @@ static NAN_PROPERTY_GETTER(getter) {
 }
 
 static NAN_PROPERTY_SETTER(setter) {
-    PROPERTY_SCOPE(property, info, ptr, fd, keyLen, keyBuf);
+    PROPERTY_SCOPE(property, info.Holder(), ptr, fd, keyLen, keyBuf);
 
     bson::BSONValue bsonValue(value);
 
@@ -124,21 +126,15 @@ public:
     uint32_t length;
     Local<Array> keys;
 
-    static void next(void* enumerator, uint16_t* key, size_t keyLen) {
-        KeysEnumerator* self = static_cast<KeysEnumerator*>(enumerator);
-#if (NODE_MODULE_VERSION > NODE_0_10_MODULE_VERSION)
-        self->keys->Set(self->length++, v8::String::NewFromTwoByte(Isolate::GetCurrent(), key, v8::String::kNormalString, keyLen));
-#else
-        self->keys->Set(self->length++, v8::String::New(key, keyLen));
-#endif
+    static void next(KeysEnumerator* self, uint16_t* key, size_t keyLen) {
+        self->keys->Set(self->length++, Nan::New<String>(key, keyLen).ToLocalChecked());
     }
 
     inline KeysEnumerator() : length(0), keys(Nan::New<Array>()) {}
 };
 
 static NAN_PROPERTY_ENUMERATOR(enumerator) {
-    void* ptr = Nan::GetInternalFieldPointer(info.Holder(), 0);
-    int fd = info.Holder()->GetInternalField(1)->Int32Value();
+    METHOD_SCOPE(info.Holder(), ptr, fd);
     // fprintf(stderr, "enumerating properties %x\n", ptr);
 
     KeysEnumerator enumerator;
@@ -148,16 +144,50 @@ static NAN_PROPERTY_ENUMERATOR(enumerator) {
 }
 
 static NAN_PROPERTY_DELETER(deleter) {
-    PROPERTY_SCOPE(property, info, ptr, fd, keyLen, keyBuf);
+    PROPERTY_SCOPE(property, info.Holder(), ptr, fd, keyLen, keyBuf);
 
     info.GetReturnValue().Set(cache::unset(ptr, fd, keyBuf, keyLen));
 }
 
 static NAN_PROPERTY_QUERY(querier) {
-    PROPERTY_SCOPE(property, info, ptr, fd, keyLen, keyBuf);
+    PROPERTY_SCOPE(property, info.Holder(), ptr, fd, keyLen, keyBuf);
     if(cache::contains(ptr, fd, keyBuf, keyLen)) {
         info.GetReturnValue().Set(0);
     }
+}
+
+// increase(holder, key, [by])
+static NAN_METHOD(increase) {
+    Local<Object> holder = Local<Object>::Cast(info[0]);
+    PROPERTY_SCOPE(info[1]->ToString(), holder, ptr, fd, keyLen, keyBuf);
+    uint32_t increase_by = info.Length() > 2 ? info[2]->Uint32Value() : 1;
+    info.GetReturnValue().Set(cache::increase(ptr, fd, keyBuf, keyLen, increase_by));
+}
+
+class EntriesDumper {
+public:
+    Local<Object> entries;
+
+    static void next(EntriesDumper* self, uint16_t* key, size_t keyLen, uint8_t* val) {
+        self->entries->Set(Nan::New<String>(key, keyLen).ToLocalChecked(), bson::parse(val));
+    }
+
+    inline  EntriesDumper() : entries(Nan::New<Object>()) {}
+};
+
+static NAN_METHOD(dump) {
+    Local<Object> holder = Local<Object>::Cast(info[0]);
+    METHOD_SCOPE(holder, ptr, fd);
+    EntriesDumper dumper;
+
+    cache::dump(ptr, fd, &dumper, EntriesDumper::next);
+    info.GetReturnValue().Set(dumper.entries);
+}
+
+static NAN_METHOD(clear) {
+    Local<Object> holder = Local<Object>::Cast(info[0]);
+    METHOD_SCOPE(holder, ptr, fd);
+    cache::clear(ptr, fd);
 }
 
 void init(Handle<Object> exports) {
@@ -169,6 +199,9 @@ void init(Handle<Object> exports) {
     
     Nan::Set(exports, Nan::New("Cache").ToLocalChecked(), constructor->GetFunction());
     Nan::SetMethod(exports, "release", release);
+    Nan::SetMethod(exports, "increase", increase);
+    Nan::SetMethod(exports, "clear", clear);
+    Nan::SetMethod(exports, "dump", dump);
 }
 
 

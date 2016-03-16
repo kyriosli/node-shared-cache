@@ -1,83 +1,94 @@
 var binding = require('../index.js');
 
+var _t, hrtime = process.hrtime;
+function begin() {
+    _t = hrtime();
+}
+
+function end() {
+    _t = hrtime(_t);
+    return (_t[0] * 1e3 + _t[1] / 1e6).toFixed(2)
+}
+
 // test plain object
 var plain = {};
-console.time('plain obj');
-for(var i = 0; i < 1000000; i++) {
+begin();
+for(var i = 0; i < 1e6; i++) {
     plain['test' + (i & 127)] = i;
 }
-console.timeEnd('plain obj');
+
+console.log('write plain obj 100w times: %sms', end());
 
 // test shared cache
 var obj = new binding.Cache("benchmark", 1048576);
-console.time('shared cache');
-for(var i = 0; i < 1000000; i++) {
+begin();
+for(var i = 0; i < 1e6; i++) {
     obj['test' + (i & 127)] = i;
 }
-console.timeEnd('shared cache');
+console.log('write shared cache 100w times: %sms', end());
 
 // test read existing key
-console.time('read plain obj');
-for(var i = 0; i < 1000000; i++) {
+begin();
+for(var i = 0; i < 1e6; i++) {
     plain['test' + (i & 127)];
 }
-console.timeEnd('read plain obj');
+console.log('read plain obj 100w times: %sms', end());
 
-console.time('read shared cache');
-for(var i = 0; i < 1000000; i++) {
+begin();
+for(var i = 0; i < 1e6; i++) {
     obj['test' + (i & 127)];
 }
-console.timeEnd('read shared cache');
+console.log('read shared cache 100w times: %sms', end());
 
-console.time('read plain obj with key absent');
-for(var i = 0; i < 1000000; i++) {
+begin();
+for(var i = 0; i < 1e6; i++) {
     plain['oops' + (i & 127)];
 }
-console.timeEnd('read plain obj with key absent');
+console.log('read plain obj with key absent 100w times: %sms', end());
 
-console.time('read shared cache with key absent');
-for(var i = 0; i < 1000000; i++) {
+begin();
+for(var i = 0; i < 1e6; i++) {
     obj['oops' + (i & 127)];
 }
-console.timeEnd('read shared cache with key absent');
+console.log('read shared cache with key absent 100w times: %sms', end());
 
 // test enumerating keys
-console.time('enumerate plain obj');
-for(var i = 0; i < 100000; i++) {
+begin();
+for(var i = 0; i < 1e5; i++) {
     Object.keys(plain);
 }
-console.timeEnd('enumerate plain obj');
+console.log('enumerate plain obj 10w times: %sms', end());
 
-console.time('enumerate shared cache');
-for(var i = 0; i < 100000; i++) {
+begin();
+for(var i = 0; i < 1e5; i++) {
     Object.keys(obj);
 }
-console.timeEnd('enumerate shared cache');
+console.log('enumerate shared cache 10w times: %sms', end());
 
 // test object serialization
 var input = {env: process.env, arr: [process.env, process.env]};
-console.time('JSON.stringify');
-for(var i = 0; i < 100000; i++) {
+begin();
+for(var i = 0; i < 1e5; i++) {
     JSON.stringify(input);
 }
-console.timeEnd('JSON.stringify');
+console.log('JSON.stringify 10w times: %sms', end());
 
-console.time('binary serialization');
-for(var i = 0; i < 100000; i++) {
+begin();
+for(var i = 0; i < 1e5; i++) {
     obj.test = input;
 }
-console.timeEnd('binary serialization');
+console.log('binary serialization 10w times: %sms', end());
 
 // test object unserialization
 input = JSON.stringify(input);
-console.time('JSON.parse');
-for(var i = 0; i < 100000; i++) {
+begin();
+for(var i = 0; i < 1e5; i++) {
     JSON.parse(input);
 }
-console.timeEnd('JSON.parse');
+console.log('JSON.parse 10w times: %sms', end());
 
-console.time('binary unserialization');
-for(var i = 0; i < 100000; i++) {
+begin();
+for(var i = 0; i < 1e5; i++) {
     obj.test;
 }
-console.timeEnd('binary unserialization');
+console.log('binary unserialization 10w times: %sms', end());

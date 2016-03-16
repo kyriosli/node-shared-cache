@@ -16,6 +16,8 @@ try {
 */
 
 var obj = new binding.Cache("test", 512<<10, binding.SIZE_1K);
+binding.clear(obj);
+
 console.log('set obj.foo');
 obj.foo = "bar";
 
@@ -26,23 +28,26 @@ obj.env = process.env;
 // free block
 obj.env = 0;
 
-// increase block
-obj.env = [process.env, process.env];
+var nested = [process.env, process.env, {}];
+obj.nested = nested;
 
-assert.deepEqual(Object.keys(obj).slice(-2), ['foo', 'env']);
+console.log(binding.dump(obj));
+
+assert.deepEqual(binding.dump(obj), {foo: 'bar', env: 0, nested: nested})
+
+nested[2].test = nested;
+// increase block
+obj.nested = nested;
+
+assert.deepEqual(Object.keys(obj), ['foo', 'env', 'nested']);
+
+var result = obj.nested;
+assert.strictEqual(result, result[2].test);
+assert.strictEqual(result[0], result[1]);
 
 for(var k in obj) {
     console.log(k, obj[k]);
 }
-
-var test = [process.env, process.env];
-
-test[2] = {'test':test};
-obj.env = test;
-
-test = obj.env;
-assert.strictEqual(test, test[2].test);
-assert.strictEqual(test[0], test[1]);
 
 delete obj.foo;
 assert.ifError('foo' in obj);
