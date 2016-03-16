@@ -120,15 +120,21 @@ The shared memory named `name` will be released. Throws error if shared memory i
 
 Don't call this method when the cache is still used by some process, may cause memory leak
 
+#### clear
+
+    function clear(instance)
+
+Clears a cache
+
 #### increase
 
-    function increase(cache, name, optional increase_by)
+    function increase(instance, name, optional increase_by)
 
 Increase a key in the cache by an integer (default to 1). If the key is absent, or not an integer, the key will be set to `increase_by`.
 
 #### dump
 
-    function dump(cache, optional prefix)
+    function dump(instance, optional prefix)
 
 Dump keys and values 
 

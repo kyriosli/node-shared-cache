@@ -49,10 +49,19 @@ for(var k in obj) {
     console.log(k, obj[k]);
 }
 
+
+obj.foo2 = 1234;
+assert.deepEqual(binding.dump(obj, 'foo'), {foo: 'bar', foo2: 1234});
+assert.deepEqual(binding.dump(obj, 'e', true), {env: 0});
+assert.ifError('env' in obj);
+
 delete obj.foo;
 assert.ifError('foo' in obj);
 assert.strictEqual(obj.foo, undefined);
 
+obj.foo = obj.bar = obj.baz = Math.random();
+console.log(binding.dump(obj, null, true));
+assert.ifError(Object.keys(obj).length);
 
 console.time('LRU cache replacement');
 for(var i = 0; i < 1000000; i+=3) {
