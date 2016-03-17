@@ -459,10 +459,10 @@ void _enumerate(void* ptr, int fd, void* enumerator, void(* callback)(void*,uint
     }
 }
 
-void _dump(void* ptr, int fd, void* dumper, bool(* callback)(void*,uint16_t*,size_t,uint8_t*), bool clear) {
-    cache_t& cache = *static_cast<cache_t*>(ptr);
+void _dump(void* ptr, int fd, void* dumper, void(* callback)(void*,uint16_t*,size_t,uint8_t*)) {
+    const cache_t& cache = *static_cast<cache_t*>(ptr);
 
-    write_lock_t lock(fd);
+    read_lock_t lock(fd);
     if(cache.info.dirty) {
         return;
     }
@@ -477,13 +477,10 @@ void _dump(void* ptr, int fd, void* dumper, bool(* callback)(void*,uint16_t*,siz
         size_t newValLen = valLen;
         cache.read(curr, val, newValLen);
         if(newValLen > valLen) valLen = newValLen;
-        if(callback(dumper, node.key, node.keyLen, val)) {
-            cache.dropNode(curr);
-        }
+        callback(dumper, node.key, node.keyLen, val);
         curr = node.next;
     }
     if(valLen > sizeof(tmp)) delete[] val;
-    if(clear) cache.format();
 }
 
 bool contains(void* ptr, int fd, const uint16_t* key, size_t keyLen) {

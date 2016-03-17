@@ -170,17 +170,15 @@ public:
     Local<Object> entries;
     uint16_t key[256];
     size_t keyLen;
-    bool drop;
 
-    static bool next(EntriesDumper* self, uint16_t* key, size_t keyLen, uint8_t* val) {
+    static void next(EntriesDumper* self, uint16_t* key, size_t keyLen, uint8_t* val) {
         if(self->keyLen) {
-            if(self->keyLen > keyLen || memcmp(self->key, key, self->keyLen << 1)) return false;
+            if(self->keyLen > keyLen || memcmp(self->key, key, self->keyLen << 1)) return;
         }
         self->entries->Set(Nan::New<String>(key, keyLen).ToLocalChecked(), bson::parse(val));
-        return self->drop;
     }
 
-    inline  EntriesDumper() : entries(Nan::New<Object>()), keyLen(0), drop(false) {}
+    inline  EntriesDumper() : entries(Nan::New<Object>()), keyLen(0) {}
 };
 
 static NAN_METHOD(dump) {
@@ -188,7 +186,6 @@ static NAN_METHOD(dump) {
     METHOD_SCOPE(holder, ptr, fd);
     EntriesDumper dumper;
 
-    bool clear = info.Length() > 2 && info[2]->BooleanValue();
     if(info.Length() > 1 && info[1]->BooleanValue()) {
         Local<String> prefix = info[1]->ToString();
         int keyLen = prefix->Length();
@@ -199,12 +196,10 @@ static NAN_METHOD(dump) {
 
         prefix->Write(dumper.key);
         dumper.keyLen = keyLen;
-        dumper.drop = clear;
-        clear = false;
     }
 
 
-    cache::dump(ptr, fd, &dumper, EntriesDumper::next, clear);
+    cache::dump(ptr, fd, &dumper, EntriesDumper::next);
     info.GetReturnValue().Set(dumper.entries);
 }
 
