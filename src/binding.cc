@@ -69,7 +69,7 @@ static NAN_METHOD(create) {
 #ifdef __MACH__
 	char sbuf[64];
 	sprintf(sbuf, "/tmp/shared_cache_%s", *name);
-	fd = open(sbuf, O_CREAT | O_RDONLY);
+	FATALIF(fd = open(sbuf, O_CREAT | O_RDONLY, 0400), -1, open);
 #endif
 
         info.Holder()->SetInternalField(1, Nan::New(fd));
