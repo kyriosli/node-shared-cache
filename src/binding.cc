@@ -27,9 +27,15 @@ using namespace v8;
     return Nan::ThrowError(sbuf);\
 }
 
+#ifndef _WIN32
+#define METHOD_SCOPE(holder, ptr, fd, hnd) void* ptr = Nan::GetInternalFieldPointer(holder, 0);\
+    HANDLE fd = holder->GetInternalField(1)->Int32Value();\
+    HANDLE hnd = holder->GetInternalField(2)->Int32Value()
+#else
 #define METHOD_SCOPE(holder, ptr, fd, hnd) void* ptr = Nan::GetInternalFieldPointer(holder, 0);\
     HANDLE fd = reinterpret_cast<HANDLE>(holder->GetInternalField(1)->IntegerValue());\
     HANDLE hnd = reinterpret_cast<HANDLE>(holder->GetInternalField(2)->IntegerValue())
+#endif
 
 #define PROPERTY_SCOPE(property, holder, ptr, fd, keyLen, keyBuf) int keyLen = property->Length();\
     if(keyLen > 256) {\
