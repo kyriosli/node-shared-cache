@@ -1,14 +1,21 @@
 #include<nan.h>
-
-#include<unistd.h>
 #include<sys/types.h>
-#include<sys/mman.h>
 #include<sys/stat.h>
 #include<fcntl.h>
 #include<errno.h>
 #include<string.h>
 #include "memcache.h"
 #include "bson.h"
+
+#ifndef _WIN32
+#include<unistd.h>
+#include<sys/mman.h>
+#endif
+
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+
 
 #define CACHE_HEADER_IN_WORDS   131080
 
@@ -20,8 +27,33 @@ using namespace v8;
     return Nan::ThrowError(sbuf);\
 }
 
+#define METHOD_SCOPE(holder, ptr, fd, hnd) void* ptr = Nan::GetInternalFieldPointer(holder, 0);\
+    HANDLE fd = reinterpret_cast<HANDLE>(holder->GetInternalField(1)->IntegerValue());\
+    HANDLE hnd = reinterpret_cast<HANDLE>(holder->GetInternalField(2)->IntegerValue())
+
+#define PROPERTY_SCOPE(property, holder, ptr, fd, keyLen, keyBuf) int keyLen = property->Length();\
+    if(keyLen > 256) {\
+        return Nan::ThrowError("length of property name should not be greater than 256");\
+    }\
+    METHOD_SCOPE(holder, ptr, fd, hnd);\
+    if((keyLen << 1) + 32 > 1 << static_cast<uint16_t*>(ptr)[CACHE_HEADER_IN_WORDS]) {\
+        return Nan::ThrowError("length of property name should not be greater than (block size - 32) / 2");\
+    }\
+    uint16_t keyBuf[256];\
+    property->Write(keyBuf)
+
+
 static NAN_METHOD(release) {
+#ifndef _WIN32
     FATALIF(shm_unlink(*String::Utf8Value(info[0])), -1, shm_unlink);
+#else
+    Local<Object> holder = Local<Object>::Cast(info[0]);
+    METHOD_SCOPE(holder, ptr, fd, hnd);
+
+    UnmapViewOfFile(ptr);
+    CloseHandle(hnd);
+    CloseHandle(fd);
+#endif
 }
 
 static NAN_METHOD(create) {
@@ -46,9 +78,12 @@ static NAN_METHOD(create) {
 
     // fprintf(stderr, "allocating %d bytes memory\n", size);
 
-    int fd;
+    HANDLE fd;
+    void* ptr;
+    bool forced = false;
     Nan::Utf8String name(info[0]);
 
+#ifndef _WIN32
     FATALIF(fd = shm_open(*name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR), -1, shm_open);
     struct stat stat;
     FATALIF(fstat(fd, &stat), -1, fstat);
@@ -59,40 +94,47 @@ static NAN_METHOD(create) {
         return Nan::ThrowError("cache initialized with different size");
     }
 
-
-    void* ptr;
-
     FATALIF(ptr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0), MAP_FAILED, mmap);
+    forced = stat.st_size == 0;
+#else
+    // create/open the file mapping
+    HANDLE hnd = OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, *name);
+    if (!hnd) {
+        FATALIF(hnd = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, size, *name), NULL, CreateFileMapping);
+        forced = true;
+    }
 
-    if(cache::init(ptr, blocks, block_size_shift, stat.st_size == 0)) {
+    // map the memory
+    FATALIF(ptr = MapViewOfFile(hnd, FILE_MAP_ALL_ACCESS, 0, 0, size), NULL, MapViewOfFile);
+    info.Holder()->SetInternalField(2, Nan::New(hnd));
+
+    // create a mutex for synchronization
+    char mutexName[64];
+    sprintf(mutexName, "mutex:%s", *name);
+    fd = CreateMutex(NULL, FALSE, mutexName);
+    if (!fd) {
+        if (GetLastError() == ERROR_ALREADY_EXISTS) {
+            FATALIF(fd = OpenMutex(SYNCHRONIZE, FALSE, *name), NULL, OpenMutex);
+        } else {
+            Nan::ThrowError("can't create mutex");
+        }
+    }
+#endif
+
+    if (cache::init(ptr, blocks, block_size_shift, forced)) {
         Nan::SetInternalFieldPointer(info.Holder(), 0, ptr);
 #ifdef __MACH__
-	char sbuf[64];
-	sprintf(sbuf, "/tmp/shared_cache_%s", *name);
-	FATALIF(fd = open(sbuf, O_CREAT | O_RDONLY, 0400), -1, open);
+        char sbuf[64];
+        sprintf(sbuf, "/tmp/shared_cache_%s", *name);
+        FATALIF(fd = open(sbuf, O_CREAT | O_RDONLY, 0400), -1, open);
 #endif
 
         info.Holder()->SetInternalField(1, Nan::New(fd));
-    } else {
+    }
+    else {
         Nan::ThrowError("cache initialization failed, maybe it has been initialized with different block size");
     }
-
 }
-
-#define METHOD_SCOPE(holder, ptr, fd) void* ptr = Nan::GetInternalFieldPointer(holder, 0);\
-    int fd = holder->GetInternalField(1)->Int32Value()
-
-#define PROPERTY_SCOPE(property, holder, ptr, fd, keyLen, keyBuf) int keyLen = property->Length();\
-    if(keyLen > 256) {\
-        return Nan::ThrowError("length of property name should not be greater than 256");\
-    }\
-    METHOD_SCOPE(holder, ptr, fd);\
-    if((keyLen << 1) + 32 > 1 << static_cast<uint16_t*>(ptr)[CACHE_HEADER_IN_WORDS]) {\
-        return Nan::ThrowError("length of property name should not be greater than (block size - 32) / 2");\
-    }\
-    uint16_t keyBuf[256];\
-    property->Write(keyBuf)
-
 
 static NAN_PROPERTY_GETTER(getter) {
     PROPERTY_SCOPE(property, info.Holder(), ptr, fd, keyLen, keyBuf);
@@ -135,7 +177,7 @@ public:
 };
 
 static NAN_PROPERTY_ENUMERATOR(enumerator) {
-    METHOD_SCOPE(info.Holder(), ptr, fd);
+    METHOD_SCOPE(info.Holder(), ptr, fd, hnd);
     // fprintf(stderr, "enumerating properties %x\n", ptr);
 
     KeysEnumerator enumerator;
@@ -183,7 +225,7 @@ public:
 
 static NAN_METHOD(dump) {
     Local<Object> holder = Local<Object>::Cast(info[0]);
-    METHOD_SCOPE(holder, ptr, fd);
+    METHOD_SCOPE(holder, ptr, fd, hnd);
     EntriesDumper dumper;
 
     if(info.Length() > 1 && info[1]->BooleanValue()) {
@@ -205,7 +247,7 @@ static NAN_METHOD(dump) {
 
 static NAN_METHOD(clear) {
     Local<Object> holder = Local<Object>::Cast(info[0]);
-    METHOD_SCOPE(holder, ptr, fd);
+    METHOD_SCOPE(holder, ptr, fd, hnd);
     cache::clear(ptr, fd);
 }
 
@@ -213,7 +255,7 @@ void init(Handle<Object> exports) {
 
     Local<FunctionTemplate> constructor = Nan::New<FunctionTemplate>(create);
     Local<ObjectTemplate> inst = constructor->InstanceTemplate();
-    inst->SetInternalFieldCount(2); // ptr, fd
+    inst->SetInternalFieldCount(3); // ptr, fd (synchronization object), hnd (Windows: file mapping handle)
     Nan::SetNamedPropertyHandler(inst, getter, setter, querier, deleter, enumerator);
     
     Nan::Set(exports, Nan::New("Cache").ToLocalChecked(), constructor->GetFunction());
