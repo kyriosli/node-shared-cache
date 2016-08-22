@@ -120,8 +120,8 @@ typedef struct cache_s {
         info.next_bitmap_index = info.first_block >> 5;
         // mark bits as used
 
-		uint32_t* bitmap = nexts + info.blocks_total;
-		memset(bitmap, 0, info.blocks_total >> 3); // 3 means 8 blocks per byte
+        uint32_t* bitmap = nexts + info.blocks_total;
+        memset(bitmap, 0, info.blocks_total >> 3); // 3 means 8 blocks per byte
 
         if(info.first_block & 31) {
             uint32_t mask = 0xffffffff << (info.first_block & 31);
