@@ -47,12 +47,15 @@ static NAN_METHOD(release) {
 #ifndef _WIN32
     FATALIF(shm_unlink(*String::Utf8Value(info[0])), -1, shm_unlink);
 #else
+    /*
+    // TODO: we need a reference to the cache object to unmap the memory and close the handles
     Local<Object> holder = Local<Object>::Cast(info[0]);
     METHOD_SCOPE(holder, ptr, fd, hnd);
 
     UnmapViewOfFile(ptr);
     CloseHandle(hnd);
     CloseHandle(fd);
+    */
 #endif
 }
 
@@ -114,7 +117,7 @@ static NAN_METHOD(create) {
     fd = CreateMutex(NULL, FALSE, mutexName);
     if (!fd) {
         if (GetLastError() == ERROR_ALREADY_EXISTS) {
-            FATALIF(fd = OpenMutex(SYNCHRONIZE, FALSE, *name), NULL, OpenMutex);
+            FATALIF(fd = OpenMutex(SYNCHRONIZE, FALSE, mutexName), NULL, OpenMutex);
         } else {
             Nan::ThrowError("can't create mutex");
         }
