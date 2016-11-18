@@ -4,6 +4,10 @@ Interprocess shared memory cache for Node.JS
 
 It supports auto memory-management and fast object serialization. It uses a hashmap and LRU cache internally to maintain its contents.
 
+## Updates
+
+  - 1.5.0 Add support for Win32 ([#7](https://github.com/kyriosli/node-shared-cache/issues/7)). Thanks to [@matthias-christen](https://github.com/matthias-christen) [@dancrumb](https://github.com/dancrumb)
+
 ## Install
 
 Install `node-gyp` first if you do not have it installed:
@@ -306,5 +310,3 @@ The result is:
 
 
 ## TODO
-
-  - add dead-lock auto recovery when data is inconsistent
