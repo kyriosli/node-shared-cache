@@ -28,20 +28,18 @@ using namespace v8;
 }
 
 #ifndef _WIN32
-#define METHOD_SCOPE(holder, ptr, fd, hnd) void* ptr = Nan::GetInternalFieldPointer(holder, 0);\
-    HANDLE fd = holder->GetInternalField(1)->Int32Value();\
-    HANDLE hnd = holder->GetInternalField(2)->Int32Value()
+#define METHOD_SCOPE(holder, ptr, fd) void* ptr = Nan::GetInternalFieldPointer(holder, 0);\
+    HANDLE fd = holder->GetInternalField(1)->Int32Value()
 #else
-#define METHOD_SCOPE(holder, ptr, fd, hnd) void* ptr = Nan::GetInternalFieldPointer(holder, 0);\
-    HANDLE fd = reinterpret_cast<HANDLE>(holder->GetInternalField(1)->IntegerValue());\
-    HANDLE hnd = reinterpret_cast<HANDLE>(holder->GetInternalField(2)->IntegerValue())
+#define METHOD_SCOPE(holder, ptr, fd) void* ptr = Nan::GetInternalFieldPointer(holder, 0);\
+    HANDLE fd = reinterpret_cast<HANDLE>(holder->GetInternalField(1)->IntegerValue())
 #endif
 
 #define PROPERTY_SCOPE(property, holder, ptr, fd, keyLen, keyBuf) int keyLen = property->Length();\
     if(keyLen > 256) {\
         return Nan::ThrowError("length of property name should not be greater than 256");\
     }\
-    METHOD_SCOPE(holder, ptr, fd, hnd);\
+    METHOD_SCOPE(holder, ptr, fd);\
     if((keyLen << 1) + 32 > 1 << static_cast<uint16_t*>(ptr)[CACHE_HEADER_IN_WORDS]) {\
         return Nan::ThrowError("length of property name should not be greater than (block size - 32) / 2");\
     }\
@@ -52,13 +50,6 @@ using namespace v8;
 static NAN_METHOD(release) {
 #ifndef _WIN32
     FATALIF(shm_unlink(*String::Utf8Value(info[0])), -1, shm_unlink);
-#else
-    Local<Object> holder = Local<Object>::Cast(info[0]);
-    METHOD_SCOPE(holder, ptr, fd, hnd);
-
-    UnmapViewOfFile(ptr);
-    CloseHandle(hnd);
-    CloseHandle(fd);
 #endif
 }
 
@@ -112,7 +103,6 @@ static NAN_METHOD(create) {
 
     // map the memory
     FATALIF(ptr = MapViewOfFile(hnd, FILE_MAP_ALL_ACCESS, 0, 0, size), NULL, MapViewOfFile);
-    info.Holder()->SetInternalField(2, Nan::New(hnd));
 
     // create a mutex for synchronization
     char mutexName[64];
@@ -120,7 +110,7 @@ static NAN_METHOD(create) {
     fd = CreateMutex(NULL, FALSE, mutexName);
     if (!fd) {
         if (GetLastError() == ERROR_ALREADY_EXISTS) {
-            FATALIF(fd = OpenMutex(SYNCHRONIZE, FALSE, *name), NULL, OpenMutex);
+            FATALIF(fd = OpenMutex(SYNCHRONIZE, FALSE, mutexName), NULL, OpenMutex);
         } else {
             Nan::ThrowError("can't create mutex");
         }
@@ -183,7 +173,7 @@ public:
 };
 
 static NAN_PROPERTY_ENUMERATOR(enumerator) {
-    METHOD_SCOPE(info.Holder(), ptr, fd, hnd);
+    METHOD_SCOPE(info.Holder(), ptr, fd);
     // fprintf(stderr, "enumerating properties %x\n", ptr);
 
     KeysEnumerator enumerator;
@@ -231,7 +221,7 @@ public:
 
 static NAN_METHOD(dump) {
     Local<Object> holder = Local<Object>::Cast(info[0]);
-    METHOD_SCOPE(holder, ptr, fd, hnd);
+    METHOD_SCOPE(holder, ptr, fd);
     EntriesDumper dumper;
 
     if(info.Length() > 1 && info[1]->BooleanValue()) {
@@ -253,7 +243,7 @@ static NAN_METHOD(dump) {
 
 static NAN_METHOD(clear) {
     Local<Object> holder = Local<Object>::Cast(info[0]);
-    METHOD_SCOPE(holder, ptr, fd, hnd);
+    METHOD_SCOPE(holder, ptr, fd);
     cache::clear(ptr, fd);
 }
 
@@ -261,7 +251,7 @@ void init(Handle<Object> exports) {
 
     Local<FunctionTemplate> constructor = Nan::New<FunctionTemplate>(create);
     Local<ObjectTemplate> inst = constructor->InstanceTemplate();
-    inst->SetInternalFieldCount(3); // ptr, fd (synchronization object), hnd (Windows: file mapping handle)
+    inst->SetInternalFieldCount(2); // ptr, fd (synchronization object)
     Nan::SetNamedPropertyHandler(inst, getter, setter, querier, deleter, enumerator);
     
     Nan::Set(exports, Nan::New("Cache").ToLocalChecked(), constructor->GetFunction());
