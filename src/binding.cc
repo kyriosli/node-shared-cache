@@ -134,21 +134,15 @@ static NAN_METHOD(create) {
 
 static NAN_PROPERTY_GETTER(getter) {
     PROPERTY_SCOPE(property, info.Holder(), ptr, fd, keyLen, keyBuf);
-    
-    uint8_t tmp[1024];
 
-    uint8_t* val = tmp;
-    size_t valLen = sizeof(tmp);
+    bson::BSONParser parser;
 
-    cache::get(ptr, fd, keyBuf, keyLen, val, valLen);
+    cache::get(ptr, fd, keyBuf, keyLen, parser.val, parser.valLen);
 
-    if(!val) return; // not found, returns undefined
-    Local<Value> ret = bson::parse(val);
-
-    if(valLen > sizeof(tmp)) {
-        delete[] val;
+    if(parser.val) {
+        info.GetReturnValue().Set(parser.parse());
     }
-    info.GetReturnValue().Set(ret);
+
 }
 
 static NAN_PROPERTY_SETTER(setter) {
@@ -201,6 +195,36 @@ static NAN_METHOD(increase) {
     PROPERTY_SCOPE(info[1]->ToString(), holder, ptr, fd, keyLen, keyBuf);
     uint32_t increase_by = info.Length() > 2 ? info[2]->Uint32Value() : 1;
     info.GetReturnValue().Set(cache::increase(ptr, fd, keyBuf, keyLen, increase_by));
+}
+
+// exchange(holder, key, val)
+// exchanges current key with new value, the old value is returned
+static NAN_METHOD(exchange) {
+    Local<Object> holder = Local<Object>::Cast(info[0]);
+    PROPERTY_SCOPE(info[1]->ToString(), holder, ptr, fd, keyLen, keyBuf);
+
+    bson::BSONValue bsonValue(info[2]);
+
+    bson::BSONParser parser;
+    FATALIF(cache::set(ptr, fd, keyBuf, keyLen, bsonValue.Data(), bsonValue.Length(), &parser.val, &parser.valLen), -1, cache::exchange);
+
+    if(parser.val) {
+        info.GetReturnValue().Set(parser.parse());
+    }
+}
+
+// fastGet(instance, key)
+static NAN_METHOD(fastGet) {
+    Local<Object> holder = Local<Object>::Cast(info[0]);
+    PROPERTY_SCOPE(info[1]->ToString(), holder, ptr, fd, keyLen, keyBuf);
+
+    bson::BSONParser parser;
+
+    cache::fast_get(ptr, fd, keyBuf, keyLen, parser.val, parser.valLen);
+
+    if(parser.val) {
+        info.GetReturnValue().Set(parser.parse());
+    }
 }
 
 class EntriesDumper {
@@ -257,6 +281,8 @@ void init(Handle<Object> exports) {
     Nan::Set(exports, Nan::New("Cache").ToLocalChecked(), constructor->GetFunction());
     Nan::SetMethod(exports, "release", release);
     Nan::SetMethod(exports, "increase", increase);
+    Nan::SetMethod(exports, "exchange", exchange);
+    Nan::SetMethod(exports, "fastGet", fastGet);
     Nan::SetMethod(exports, "clear", clear);
     Nan::SetMethod(exports, "dump", dump);
 }

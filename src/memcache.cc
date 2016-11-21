@@ -396,7 +396,28 @@ void get(void* ptr, HANDLE fd, const uint16_t* key, size_t keyLen, uint8_t*& ret
     // dump(cache);
 }
 
-int set(void* ptr, HANDLE fd, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen) {
+void fast_get(void* ptr, HANDLE fd, const uint16_t* key, size_t keyLen, uint8_t*& retval, size_t& retvalLen) {
+    // fprintf(stderr, "cache::fast_get: key len %d\n", keyLen);
+    cache_t& cache = *static_cast<cache_t*>(ptr);
+
+    uint32_t hash = hashsum(key, keyLen);
+    read_lock_t lock(fd);
+    if(cache.info.dirty) {
+        retval = NULL;
+        return;
+    }
+
+    uint32_t found = cache.find(key, keyLen, hash);
+    // fprintf(stderr, "cache::fast_get hash=%d found=%d\n", hash, found);
+    if(!found) {
+        retval = NULL;
+        return;
+    }
+
+    cache.read(found, retval, retvalLen);
+}
+
+int set(void* ptr, HANDLE fd, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen, uint8_t** oldval, size_t* oldvalLen) {
     cache_t& cache = *static_cast<cache_t*>(ptr);
     const size_t totalLen = (keyLen << 1) + valLen + sizeof(node_s);
     const uint32_t BLK_SIZE = 1 << cache.info.block_size_shift;
@@ -421,6 +442,9 @@ int set(void* ptr, HANDLE fd, const uint16_t* key, size_t keyLen, const uint8_t*
     cache.info.dirty = 1;
     // fprintf(stderr, "cache::set hash=%d found=%d hash_head=%d\n", hash, found, cache.hashmap[hash & 0xffff]);
     if(found) { // update
+        if(oldval) { // preserve old value
+            cache.read(found, *oldval, *oldvalLen);
+        }
         cache.touch(found);
         selectedBlock = cache.address<node_t>(found);
         node_t& node = *selectedBlock;
@@ -435,6 +459,9 @@ int set(void* ptr, HANDLE fd, const uint16_t* key, size_t keyLen, const uint8_t*
         }
         node.blocks = blocksRequired;
     } else { // insert
+        if(oldval) {
+            *oldval = NULL;
+        }
         // insert into hash table
         found = cache.setup(blocksRequired, hash, keyLen, key);
         // fprintf(stderr, "cache::set allocated new block %d\n", found);

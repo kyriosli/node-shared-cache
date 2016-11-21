@@ -12,7 +12,7 @@ typedef int HANDLE;
 namespace cache {
     bool init(void* ptr, uint32_t blocks, uint32_t block_size_shift, bool forced);
 
-    int set(void* ptr, HANDLE fd, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen);
+    int set(void* ptr, HANDLE fd, const uint16_t* key, size_t keyLen, const uint8_t* val, size_t valLen, uint8_t** oldval = NULL, size_t* oldvalLen = NULL);
 
     void _enumerate(void* ptr, HANDLE fd, void* enumerator, void(* callback)(void*,uint16_t*,size_t));
 
@@ -30,6 +30,8 @@ namespace cache {
 
     void get(void* ptr, HANDLE fd, const uint16_t* key, size_t keyLen, uint8_t*& val, size_t& valLen);
 
+    void fast_get(void* ptr, HANDLE fd, const uint16_t* key, size_t keyLen, uint8_t*& val, size_t& valLen);
+
     bool contains(void* ptr, HANDLE fd, const uint16_t* key, size_t keyLen);
 
     bool unset(void* ptr, HANDLE fd, const uint16_t* key, size_t keyLen);
@@ -37,6 +39,7 @@ namespace cache {
     void clear(void* ptr, HANDLE fd);
 
     int32_t increase(void* ptr, HANDLE fd, const uint16_t* key, size_t keyLen, int32_t increase_by);
+
 }
 
 #endif

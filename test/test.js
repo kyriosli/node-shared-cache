@@ -54,6 +54,14 @@ obj.foo2 = 1234;
 assert.deepEqual(binding.dump(obj, 'foo'), {foo: 'bar', foo2: 1234});
 assert.deepEqual(binding.dump(obj, 'e'), {env: 0});
 
+// test exchange
+assert.strictEqual(binding.exchange(obj, 'foo2', 5678), 1234);
+assert.strictEqual(obj.foo2, 5678);
+assert.strictEqual(binding.exchange(obj, 'blah', 'mew'), undefined);
+assert.strictEqual(obj.blah, 'mew');
+assert.strictEqual(binding.fastGet(obj, 'blah'), 'mew');
+assert.strictEqual(binding.fastGet(obj, 'blah~'), undefined);
+
 delete obj.foo;
 assert.ifError('foo' in obj);
 assert.strictEqual(obj.foo, undefined);

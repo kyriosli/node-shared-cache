@@ -42,6 +42,12 @@ console.log('read shared cache 100w times: %sms', end());
 
 begin();
 for(var i = 0; i < 1e6; i++) {
+    binding.fastGet(obj, 'test' + (i & 127));
+}
+console.log('fastGet 100w times: %sms', end());
+
+begin();
+for(var i = 0; i < 1e6; i++) {
     plain['oops' + (i & 127)];
 }
 console.log('read plain obj with key absent 100w times: %sms', end());

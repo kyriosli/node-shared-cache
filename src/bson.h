@@ -31,6 +31,26 @@ namespace bson {
 
     v8::Local<v8::Value> parse(const uint8_t* data);
 
+
+    class BSONParser {
+    private:
+        uint8_t tmp[1024];
+    public:
+        uint8_t* val;
+        size_t valLen;
+
+        inline BSONParser() : val(tmp), valLen(sizeof(tmp)) {}
+        inline ~BSONParser() {
+            if(valLen > sizeof(tmp)) {
+                delete[] val;
+            }
+        }
+
+        inline v8::Local<v8::Value> parse() {
+            return bson::parse(val);
+        }
+    };
+
 }
 
 #endif

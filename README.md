@@ -6,18 +6,21 @@ It supports auto memory-management and fast object serialization. It uses a hash
 
 ## Updates
 
+  - 1.6.2
+    - Add `exchange` method which can be used as atomic lock as well as `increase`
+    - Add `fastGet` method which does not touch the LRU sequence
   - 1.6.1 Update `nan` requirement to 2.4.0 
   - 1.6.0 Add support for Win32 ([#7](https://github.com/kyriosli/node-shared-cache/issues/7)). Thanks to [@matthias-christen](https://github.com/matthias-christen) [@dancrumb](https://github.com/dancrumb)
 
 ## Install
 
-Install `node-gyp` first if you do not have it installed:
+You can install it with npm. Just type `npm i node-shared-cache` will do it.
 
-    sudo npm install node-gyp -g
+You can also download and install it manually, but you need to install Node.JS and `node-gyp` first.
 
-Then
-
-    npm install kyriosli/node-shared-cache
+    git clone https://github.com/kyriosli/node-shared-cache.git
+    cd node-shared-cache
+    node-gyp rebuild
 
 
 ## Terms of Use
@@ -49,45 +52,61 @@ in case that wrong data is returned when performing a reading operation, or even
 ## usage
 
 ```js
+// create cache instance
 var cache = require('node-shared-cache');
 var obj = new cache.Cache("test", 557056);
+
 // setting property
 obj.foo = "bar";
+
 // getting property
 console.log(obj.foo);
+
 // enumerating properties
 for(var k in obj);
 Object.keys(obj);
+
 // deleting property
 delete obj.foo;
+
 // writing objects is also supported
 obj.foo = {'foo': 'bar'};
 // but original object reference is not saved
 var test = obj.foo = {'foo': 'bar'};
 test === obj.foo; // false
+
 // circular reference is supported.
 test.self = test;
 obj.foo = test;
 // and saved result is also circular
 test = obj.foo;
 test.self === test; // true
-// release memory region
-cache.release("test");
+
 // increase a key
 cache.increase(obj, "foo");
 cache.increase(obj, "foo", 3);
+
+// exchange current key with new value, the old value is returned
+cache.set(obj, "foo", 123);
+cache.exchange(obj, "foo", 456); // 123
+obj.foo; // 456
+
+// release memory region
+cache.release("test");
+
 // dump current cache
 var values = cache.dump(obj);
 // dump current cache by key prefix
 values = cache.dump(obj, "foo_");
-
 ```
 
 ### class Cache
 
 #### constructor
 
+```js
     function Cache(name, size, optional block_size)
+```
 
 `name` represents a file name in shared memory, `size` represents memory size in bytes to be used. `block_size` denotes the size of the unit of the memory block.
 
@@ -113,13 +132,17 @@ So when block_size is set to default, the maximum memory size that can be used i
 
 #### property setter
 
-    set(name, value)
+```js
+set(name, value)
+```
 
 ### exported methods
 
 #### release
 
-    function release(name)
+```js
+function release(name)
+```
 
 The shared memory named `name` will be released. Throws error if shared memory is not found. Note that this method simply calls `shm_unlink` and does not check whether the memory region is really initiated by this module.
 
@@ -133,33 +156,55 @@ Clears a cache
 
 #### increase
 
-    function increase(instance, name, optional increase_by)
+```js
+function increase(instance, name, optional increase_by)
+```
 
 Increase a key in the cache by an integer (default to 1). If the key is absent, or not an integer, the key will be set to `increase_by`.
 
+#### exchange
+
+```js
+function exchange(instance, name, new_value)
+```
+
+Update a key in the cache with a new value, the old value is returned.
+
+#### fastGet
+
+```js
+function fastGet(instance, name)
+```
+
+Get the value of a key without touching the LRU sequence. This method is usually faster than `instance[name]` because it uses
+different lock mechanism to ensure shared reading across processes.
+
 #### dump
 
+```js
     function dump(instance, optional prefix)
+```
 
 Dump keys and values 
 
 ## Performance
 
 Tests are run under a virtual machine with one processor: 
-
-    $ node -v
-    v0.12.4
-    $ cat /proc/cpuinfo
-    processor   : 0
-    vendor_id   : GenuineIntel
-    cpu family  : 6
-    model       : 45
-    model name  : Intel(R) Xeon(R) CPU E5-2630 0 @ 2.30GHz
-    stepping    : 7
-    microcode   : 0x70d
-    cpu MHz     : 2300.090
-    cache size  : 15360 KB    
-    ...
+```sh
+$ node -v
+v0.12.4
+$ cat /proc/cpuinfo
+processor   : 0
+vendor_id   : GenuineIntel
+cpu family  : 6
+model       : 45
+model name  : Intel(R) Xeon(R) CPU E5-2630 0 @ 2.30GHz
+stepping    : 7
+microcode   : 0x70d
+cpu MHz     : 2300.090
+cache size  : 15360 KB    
+...
+```
 
 Block size is set to 64 and 1MB of memory is used.
 
