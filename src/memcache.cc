@@ -526,10 +526,15 @@ void _dump(void* ptr, HANDLE fd, void* dumper, void(* callback)(void*,uint16_t*,
 
     while(curr) {
         node_t& node = *cache.address<node_t>(curr);
+        uint8_t* newVal = val;
         size_t newValLen = valLen;
-        cache.read(curr, val, newValLen);
-        if(newValLen > valLen) valLen = newValLen;
-        callback(dumper, node.key, node.keyLen, val);
+        cache.read(curr, newVal, newValLen);
+        if(newValLen > valLen) {
+            if(valLen > sizeof(tmp)) delete[] val;
+            valLen = newValLen;
+            val = newVal;
+        }
+        callback(dumper, node.key, node.keyLen, newVal);
         curr = node.next;
     }
     if(valLen > sizeof(tmp)) delete[] val;
