@@ -6,6 +6,7 @@ It supports auto memory-management and fast object serialization. It uses a hash
 
 ## Updates
 
+  - 1.6.1 Update `nan` requirement to 2.4.0 
   - 1.6.0 Add support for Win32 ([#7](https://github.com/kyriosli/node-shared-cache/issues/7)). Thanks to [@matthias-christen](https://github.com/matthias-christen) [@dancrumb](https://github.com/dancrumb)
 
 ## Install

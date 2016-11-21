@@ -1,10 +1,10 @@
 {
   "name": "node-shared-cache",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Interprocess shared memory cache for Node.JS",
   "main": "index.js",
   "dependencies": {
-    "nan": "~2.2.0"
+    "nan": "~2.4.0"
   },
   "devDependencies": {},
   "scripts": {
