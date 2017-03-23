@@ -14,7 +14,8 @@ namespace bson {
         String,
         Array,
         Object,
-        ObjectRef
+        ObjectRef,
+        Buffer
     } TYPES;
 
     class BSONValue {
