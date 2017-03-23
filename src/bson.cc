@@ -114,6 +114,16 @@ typedef struct writer_s {
                     // fprintf(stderr, "write array[%d] (len=%d)\n", i, len);
                     write(arr->Get(i));
                 }
+            } else if (node::Buffer::HasInstance(value)) {
+                *(current++) = bson::Buffer;
+                char *data = node::Buffer::Data(value);
+                uint32_t len = node::Buffer::Length(value);
+                ensureCapacity(sizeof(uint32_t) + len);
+                *reinterpret_cast<uint32_t*>(current) = len;
+                current += sizeof(uint32_t);
+                for(uint32_t i = 0; i < len; i++) {
+                    *(current++) = data[i];
+                }
             } else { // TODO: support for other object types
                 *(current++) = bson::Object;
                 Local<Array> names = obj->GetOwnPropertyNames();
@@ -215,6 +225,18 @@ static v8::Local<v8::Value> parse(const uint8_t*& data, object_wrapper_t*& objec
                 curr = curr->next;
             }
             return curr->object;
+        }
+    case bson::Buffer:
+        len = *reinterpret_cast<const uint32_t*>(data);
+        data += sizeof(uint32_t);
+        {
+            char *retval = new char[len];
+            for(uint32_t i = 0; i < len; i++) {
+                retval[i] = data[i];
+            }
+
+            Local<Object> obj = Nan::NewBuffer(retval, len).ToLocalChecked();
+            return obj;
         }
     }
     assert("should not reach here");
